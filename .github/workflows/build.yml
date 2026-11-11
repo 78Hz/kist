@@ -177,6 +177,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4             # for the manual (docs/manual/KIST-manual.pdf)
+        with:
+          path: src
       - uses: actions/download-artifact@v4
         with:
           path: art
@@ -193,6 +196,7 @@ jobs:
           cp art/firmware/*.fwsc art/firmware/firmware.json art/firmware/SHA256SUMS files/
           cp art/firmware/console.png files/kist-screen.png 2>/dev/null || true
           find art -path 'art/manager-*' -type f -exec cp {} files/ \;
+          cp src/docs/manual/KIST-manual.pdf files/ 2>/dev/null || true
           ls -la files
           cat > notes.md <<NOTES
           KIST $version for the M-VAVE FM-1, and FM-1 Manager.
@@ -200,7 +204,8 @@ jobs:
           - **kist-$version.fwsc**: the firmware. Install it with FM-1 Manager, or
             \`python3 fm1-base/tools/fm1_install.py kist-$version.fwsc\`.
           - **FM-1 Manager**: macOS (Apple silicon / Intel), Windows, Linux. It installs any FM-1 firmware, puts
-            M-VAVE's back, and keeps backups; it comes with this KIST. See [manager/](https://github.com/$GH_REPO/tree/$tag/manager).
+            M-VAVE's back, and keeps backups; it comes with this KIST.
+          - **KIST-manual.pdf**: the player's manual. See [manager/](https://github.com/$GH_REPO/tree/$tag/manager).
 
           Take a whole-flash backup before the first install (FM-1 Manager → Whole flash). Not yet played on a
           real FM-1: install at your own risk, and report what you find.

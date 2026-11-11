@@ -1,0 +1,55 @@
+# the manual's screenshots, each page at rest (the red line under the title cleared):
+#   build/host/kist_host docs/manual/screens.txt build/manual   (then docs/manual/make_manual.py build/manual)
+wait 800
+tap ENV
+tap LFO
+tap ARP
+wait 3200
+shot console.png
+turn SELECT 1
+wait 3200
+shot t_equal.png
+turn K3 1
+wait 3200
+shot t_werck.png
+turn K3 1
+wait 3200
+shot t_mean.png
+turn K3 1
+wait 3200
+shot t_kirn.png
+turn K3 1
+wait 3200
+shot t_vall.png
+turn K3 -4
+wait 900
+turn K4 19
+wait 3200
+shot tuning_31edo.png
+turn K4 -19
+wait 900
+turn K3 4
+wait 3200
+turn SELECT 1
+wait 3200
+shot room.png
+turn SELECT 1
+tap SEQ
+midi TRS 90 30 64
+midi TRS 90 3C 64
+midi TRS 90 40 64
+midi TRS 90 43 64
+wait 3200
+shot wind_trem.png
+midi TRS B0 7B 00
+tap SEQ
+turn SELECT 1
+tapkey 9 100
+wait 3200
+shot voicing.png
+turn SELECT 1
+wait 3200
+shot system.png
+turn ALGO 1
+wait 300
+shot temperament_overlay.png

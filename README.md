@@ -95,6 +95,7 @@ The toolchain and SDK: `fm1-base/tools/get_toolchain.sh`, or the mirrors of
 
 Download `kist-X.Y.fwsc` from the [latest release](https://github.com/78Hz/kist/releases/latest), then either:
 
+- The [manual](docs/manual/KIST-manual.pdf) explains the instrument for players.
 - **FM-1 Manager** (the same release, for macOS, Windows and Linux): open it, add the file under Firmware and
   press *Install on FM-1*. It also takes backups and puts M-VAVE's firmware back. See [manager/](manager/).
 - **The command line**: `python3 fm1-base/tools/fm1_install.py kist-X.Y.fwsc`
