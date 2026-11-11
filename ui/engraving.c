@@ -121,7 +121,11 @@ static void sheet(void)
 }
 
 /* the title in Fraktur (its first letter red) between double hairlines, and the caption under it: the page's own,
- * or for a moment the last thing done */
+ * or for a moment the last thing done (the knob turned, with its name). Nothing on the screen is smaller than the
+ * pipe names (17 px). */
+#define KF_BODY KF_NAME
+#define Y0 54                                  /* the page's own rows begin here */
+#define FOOT_Y 183                             /* the two rows of knob values */
 static void title(const char *t, const char *caption)
 {
     char first[2] = {t[0], 0};
@@ -153,52 +157,48 @@ static void title(const char *t, const char *caption)
                     cap = 1;
             }
         }
-        text_c(120, 32, &KF_ITAL, m, P_RED);
+        text_c(120, 30, &KF_ITAL, m, P_RED);
     } else {
-        text_c(120, 32, &KF_SC, caption, P_INK);
+        text_c(120, 30, &KF_ITAL, caption, P_INK);
     }
 }
 
-/* the four knobs, as an index at the foot: i..iv, each a red small-capital label and its value */
-static void foot(int k, const char *label, const char *value)
+/* the four knobs at the foot: i..iv and the value, as large as the pipe names; the knob's name shows above, in the
+ * caption, while it turns */
+static void foot(int k, const char *value)
 {
-    static const char *const N[4] = {"i^", "ii^", "iii^", "iv^"};
-    static const felucca_font_t *const VF[3] = {&KF_BODY, &KF_ITAL, &KF_SC};
-    int32_t x = (k & 1) ? 124 : 22, rx = (k & 1) ? 218 : 116, y = 198 + (k >> 1) * 17;
-    int32_t nw = text_w(&KF_SC, N[k]) + 2, lw = text_w(&KF_SC, label), vw = 0, f;
-    for (f = 0; f < 3; f++) {               /* the value as large as the cell allows */
-        vw = text_w(VF[f], value);
-        if (nw + lw + vw + 4 <= rx - x)
-            break;
-    }
-    if (f == 3) {                           /* still too wide: without the numeral, in small capitals */
-        f = 2;
-        nw = 0;
-    }
+    static const char *const N[4] = {"i", "ii", "iii", "iv"};
+    int32_t x = (k & 1) ? 126 : 22, rx = (k & 1) ? 218 : 114, y = FOOT_Y + (k >> 1) * 21;
+    int32_t nw = text_w(&KF_SC, N[k]) + 5;
+    const felucca_font_t *f = &KF_NAME;
+    if (nw + text_w(f, value) > rx - x)
+        f = &KF_ITAL;                       /* narrower, the same size */
+    if (nw + text_w(f, value) > rx - x)
+        nw = 0;                             /* still too wide: without the numeral */
     if (nw)
-        cv_text(x, y + 2, &KF_SC, N[k], P_MID);
-    cv_text(x + nw, y + 2, &KF_SC, label, P_RED);
-    text_r(rx, f == 2 ? y + 2 : y, VF[f], value, P_INK);
+        cv_text(x, y, &KF_SC, N[k], P_RED);
+    text_r(rx, y, f, value, P_INK);
 }
 static void foot_rules(void)
 {
-    hline(12, 195, 216, P_INK);
-    hline(12, 196, 216, P_INK);
-    hline(16, 213, 208, P_RULE);
-    vline(119, 197, 33, P_RULE);
+    hline(12, 179, 216, P_INK);
+    hline(12, 180, 216, P_INK);
+    hline(20, 203, 200, P_RULE);
+    vline(120, 183, 42, P_RULE);
 }
 
 static const char *const PAGE_TITLE[NPAGES] = {"Con_ole", "Tuning", "The Room", "The Wind", "Intonation", "The Works"};
 static const char *const STOP_DE[NSTOPS] = {"Gedackt", "Rohrfl{te", "Principal", "Quinta"};
 static const char *const STOP_FUSS[NSTOPS] = {"8 Fu~", "4 Fu~", "2 Fu~", "2` Fu~"};
+static const char *const STOP_FT[NSTOPS] = {"8'", "4'", "2'", "2`'"};
 
-static const char *caption(const char *what)     /* "what ^ page iv" */
+static const char *caption(const char *what)     /* "what ^ iv" */
 {
     static char b[64];
     char r[8];
     b[0] = 0;
     text_cat(b, what);
-    text_cat(b, " ^ page ");
+    text_cat(b, " ^ ");
     roman((uint32_t)ui.page + 1u, r);
     text_cat(b, r);
     return b;
@@ -215,113 +215,66 @@ static void pitch_dot(char *b)                    /* 415^37 */
     text_cat(b, t);
 }
 
+static void dots_to_mid(char *t)                 /* 2.4 -> 2^4 */
+{
+    for (; *t; t++)
+        if (*t == '.')
+            *t = '^';
+}
+
 /* ------------------------------------------------------------------------------------------------ pages --- */
 static void knob_head(int32_t cx, int32_t cy, int drawn, int exists)
 {
     if (!exists) {
-        circle(cx, cy, 11, P_MID, 1);
+        circle(cx, cy, 10, P_MID, 1);
         return;
     }
     if (drawn)
-        circle_hatch(cx, cy, 11, P_INK);
+        circle_hatch(cx, cy, 10, P_INK);
+    circle(cx, cy, 10, P_INK, 0);
     circle(cx, cy, 11, P_INK, 0);
-    circle(cx, cy, 12, P_INK, 0);
-    circle(cx, cy, 7, drawn ? P_PAPER : P_INK, 0);
+    circle(cx, cy, 6, drawn ? P_PAPER : P_INK, 0);
 }
 
 static void draw_console(void)
 {
-    const organ_meter_t *m = organ_meter();
-    char t[64], u[24];
+    char t[64];
     int s;
     t[0] = 0;
     text_cat(t, ui.blower ? "the wind well supplied" : "the wind wanting");
     if (set.trem)
         text_cat(t, ", trembling");
     title(PAGE_TITLE[0], caption(t));
-    cv_text(14, 48, &KF_SC, "Register", P_RED);
-    text_c(170, 48, &KF_SC, "Bass", P_RED);
-    text_c(208, 48, &KF_SC, "Treble", P_RED);
+    text_c(160, Y0, &KF_ITAL, "bass", P_RED);
+    text_c(204, Y0, &KF_ITAL, "treble", P_RED);
     for (s = 0; s < NSTOPS; s++) {
-        int32_t y = 62 + s * 30, x;
-        x = cv_text(14, y + 2, &KF_NAME, STOP_DE[s], P_INK);
-        cv_text(x + 5, y + 6, &KF_ITAL, STOP_FUSS[s], P_INK);
-        knob_head(170, y + 12, set.halves >> (2 * s) & 1u, s != ST_QUINT);
-        knob_head(208, y + 12, set.halves >> (2 * s + 1) & 1u, 1);
-        hline(12, y + 27, 216, P_RULE);
-    }
-    {
-        int32_t x = cv_text(14, 177, &KF_BODY, "A", P_RED);
-        t[0] = 0;
-        text_cat(t, " at ");
-        pitch_dot(u);
-        text_cat(t, u);
-        text_cat(t, ", ");
-        if (set.par.system == TS_EQUAL) {
-            if (set.par.edo == 12) {
-                text_cat(t, "equal");
-            } else {
-                int_text(set.par.edo, u);
-                text_cat(t, u);
-                text_cat(t, " parts");
-            }
-        } else {
-            text_cat(t, SYS_SHORT_B[set.par.system]);
-        }
-        cv_text(x, 177, &KF_BODY, t, P_INK);
-        t[0] = 0;
-        text_cat(t, "pipes ");
-        roman(m->pipes, u);
-        text_cat(t, u);
-        text_r(226, 179, &KF_SC, t, P_INK);
+        int32_t y = Y0 + 22 + s * 27, x;
+        x = cv_text(14, y + 1, &KF_NAME, STOP_DE[s], P_INK);
+        cv_text(x + 5, y + 1, &KF_ITAL, STOP_FT[s], P_INK);
+        knob_head(160, y + 12, set.halves >> (2 * s) & 1u, s != ST_QUINT);
+        knob_head(204, y + 12, set.halves >> (2 * s + 1) & 1u, 1);
+        if (s < NSTOPS - 1)
+            hline(12, y + 25, 216, P_RULE);
     }
     foot_rules();
-    foot(0, "Room", organ_room_name(set.par.room));
+    foot(0, organ_room_name(set.par.room));
     int_text(set.par.mix, t);
-    text_cat(t, " parts");
-    foot(1, "Share", t);
-    pitch_dot(t);
-    foot(2, "Pitch", t);
-    foot(3, "Touch", TOUCH_B[set.par.touch]);
+    text_cat(t, " in 100");
+    foot(1, t);
+    t[0] = 0;
+    text_cat(t, "A ");
+    pitch_dot(t + 2);
+    foot(2, t);
+    foot(3, TOUCH_B[set.par.touch]);
 }
 
 static void draw_tuning(void)
 {
     char t[64], u[24];
     int sys = ui.sys_pending >= 0 ? ui.sys_pending : set.par.system;
-    int32_t cx = 120, cy = 115, x;
-    title(PAGE_TITLE[1], caption(sys == TS_EQUAL ? "pitch and division" : "pitch and temperament"));
-    x = cv_text(28, 46, &KF_BODY, "A", P_RED);
-    t[0] = 0;
-    text_cat(t, " at ");
-    pitch_dot(u);
-    text_cat(t, u);
-    text_cat(t, " Hz, ");
-    if (sys == TS_EQUAL) {
-        int_text(set.par.edo, u);
-        text_cat(t, u);
-        text_cat(t, " equal parts");
-    } else {
-        text_cat(t, SYS_SHORT_B[sys]);
-        text_cat(t, " upon ");
-        text_cat(t, PC_NAME[set.par.root]);
-    }
-    cv_text(x, 46, &KF_BODY, t, ui.sys_pending >= 0 ? P_RED : P_INK);
+    int32_t cx = 120, cy = 131;
     if (sys == TS_EQUAL && set.par.edo != 12) {
-        /* an equal division: the octave as an engraved scale of its parts */
-        int n = set.par.edo, k;
-        int32_t step100 = (int32_t)(120000 / n);
-        circle(cx, cy, 44, P_INK, 0);
-        circle(cx, cy, 42, P_INK, 0);
-        for (k = 0; k < n; k++) {
-            float a = 360.0f * (float)k / (float)n, rad = (a - 90.0f) * 0.01745329f, c = fm_cosf(rad), s = fm_sinf(rad);
-            int32_t len = (k % 12 == 0 || n % 12 == 0) && k * 12 % n == 0 ? 12 : 6;
-            cv_line(cx + (int32_t)(42.0f * c), cy + (int32_t)(42.0f * s), cx + (int32_t)((float)(42 - len) * c),
-                    cy + (int32_t)((float)(42 - len) * s), k == 0 ? P_RED : P_INK);
-        }
-        int_text(n, t);
-        text_c(cx, cy - 12, &KF_BIG, t, P_INK);
-        text_c(cx, cy + 20, &KF_SC, "parts", P_INK);
+        int32_t step100 = (int32_t)(120000 / set.par.edo);
         t[0] = 0;
         text_cat(t, "each part ");
         int_text(step100 / 100, u);
@@ -331,58 +284,98 @@ static void draw_tuning(void)
         u[1] = (char)('0' + step100 % 10);
         u[2] = 0;
         text_cat(t, u);
-        text_cat(t, " cents; one to each key");
-        text_c(120, 166, &KF_ITAL, t, P_INK);
+        text_cat(t, " cents");
+        title(PAGE_TITLE[1], t);
     } else {
-        /* the Quinten-Circul: the twelve notes round the circle of fifths, each fifth's tempering by its weight */
+        title(PAGE_TITLE[1], sys == TS_EQUAL ? "twelve equal semitones" : CIRCUL_NOTE[sys]);
+    }
+    {
+        int32_t x = cv_text(18, Y0, &KF_NAME, "A", P_RED);
+        t[0] = 0;
+        text_cat(t, " ");
+        pitch_dot(u);
+        text_cat(t, u);
+        text_cat(t, " Hz, ");
+        if (sys == TS_EQUAL) {
+            int_text(set.par.edo, u);
+            text_cat(t, u);
+            text_cat(t, " equal");
+        } else {
+            text_cat(t, SYS_SHORT_B[sys]);
+            text_cat(t, " on ");
+            text_cat(t, PC_NAME[set.par.root]);
+        }
+        cv_text(x, Y0, &KF_NAME, t, ui.sys_pending >= 0 ? P_RED : P_INK);
+    }
+    if (sys == TS_EQUAL && set.par.edo != 12) {
+        /* an equal division: the octave as an engraved scale of its parts */
+        int n = set.par.edo, k;
+        cy = 127;
+        circle(cx, cy, 46, P_INK, 0);
+        circle(cx, cy, 44, P_INK, 0);
+        for (k = 0; k < n; k++) {
+            float a = 360.0f * (float)k / (float)n, rad = (a - 90.0f) * 0.01745329f, c = fm_cosf(rad), s = fm_sinf(rad);
+            int32_t len = (k % 12 == 0 || n % 12 == 0) && k * 12 % n == 0 ? 13 : 7;
+            cv_line(cx + (int32_t)(44.0f * c), cy + (int32_t)(44.0f * s), cx + (int32_t)((float)(44 - len) * c),
+                    cy + (int32_t)((float)(44 - len) * s), k == 0 ? P_RED : P_INK);
+        }
+        int_text(n, t);
+        text_c(cx, cy - 22, &KF_BIG, t, P_INK);
+        text_c(cx, cy + 10, &KF_ITAL, "parts", P_INK);
+    } else {
+        /* the circle of fifths, laid out as the old tables print it: three rows of four, each fifth a stroke whose
+         * weight is its tempering (pure: a hairline), the wolf red; the last row closes on C */
         static const int FIFTHS[12] = {0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5};
         static const char *const NOTE[12] = {"C", "G", "D", "A", "E", "B", "F#", "C#", "G#", "Eb", "Bb", "F"};
         float c[12];
-        int i, wolf = -1;
+        int i;
         organ_temperament_cents(sys, set.par.root, c);
-        circle(cx, cy, 49, P_INK, 0);
-        circle(cx, cy, 47, P_INK, 0);
-        for (i = 0; i < 12; i++) {         /* the fifth from note i to note i+1 */
+        cv_text(14, 77, &KF_SC, "the fifths", P_RED);
+        for (i = 0; i < 12; i++) {
             int a = FIFTHS[i], b = FIFTHS[(i + 1) % 12];
             float size = 700.0f + c[b] - c[a], narrow = 701.955f - size;
-            int32_t w = narrow > 4.5f ? 3 : narrow > 2.5f ? 2 : 1;
-            uint16_t col = narrow < -5.0f ? P_RED : P_INK;
-            if (narrow < -5.0f) {
-                wolf = i;
+            int32_t w = narrow > 4.5f ? 3 : narrow > 2.5f ? 2 : 1, row = i / 4, col = i % 4;
+            int32_t nx = 30 + col * 52, y = 100 + row * 26, x0, x1;
+            uint16_t ink = narrow < -5.0f ? P_RED : P_INK;
+            if (narrow < -5.0f)
                 w = 3;
-            }
-            arc(cx, cy, 31, narrow > -0.3f && narrow < 0.3f ? 1 : w, 30.0f * (float)i + 7.0f, 30.0f * (float)(i + 1) - 7.0f, col);
+            if (narrow > -0.3f && narrow < 0.3f)
+                w = 1;
+            text_c(nx, y, &KF_NAME, NOTE[i], a == (int)set.par.root ? P_RED : P_INK);
+            if (a == (int)set.par.root)
+                hline(nx - text_w(&KF_NAME, NOTE[i]) / 2, y + 20, text_w(&KF_NAME, NOTE[i]), P_RED);
+            x0 = nx + text_w(&KF_NAME, NOTE[i]) / 2 + 3;
+            x1 = nx + 52 - text_w(&KF_NAME, NOTE[(i + 1) % 12]) / 2 - 3;
+            if (col == 3)
+                x1 = 226;                   /* on to the next row */
+            if (row == 2 && col == 3)
+                x1 = nx + 22;
+            cv_rect(x0, y + 11 - w / 2, x1 - x0, w, ink);
         }
-        for (i = 0; i < 12; i++) {
-            float rad = (30.0f * (float)i - 90.0f) * 0.01745329f;
-            int32_t nx = cx + (int32_t)(38.0f * fm_cosf(rad) + 0.5f), ny = cy + (int32_t)(38.0f * fm_sinf(rad) + 0.5f);
-            text_c(nx, ny - 7, &KF_SC, NOTE[i], FIFTHS[i] == set.par.root ? P_RED : P_INK);
-            if (FIFTHS[i] == set.par.root)
-                circle(nx, ny, 9, P_RED, 0);
-        }
-        text_c(cx, cy - 10, &KF_SC, "Quinten-", P_INK);
-        text_c(cx, cy + 1, &KF_SC, "Circul", P_INK);
-        text_c(120, 164, &KF_ITAL, CIRCUL_NOTE[sys], P_INK);
-        if (wolf >= 0)
-            text_c(120, 178, &KF_ITAL, "the wolf in red", P_RED);
+        cv_text(30 + 3 * 52 + 25, 152, &KF_NAME, "C", P_MID);
     }
     foot_rules();
-    int_text(set.par.pitch_hz, t);
+    t[0] = 0;
+    text_cat(t, "A ");
+    int_text(set.par.pitch_hz, t + 2);
+    foot(0, t);
+    t[0] = '+';
+    t[1] = '^';
+    t[2] = (char)('0' + set.par.pitch_cent / 10u);
+    t[3] = (char)('0' + set.par.pitch_cent % 10u);
+    t[4] = 0;
     text_cat(t, " Hz");
-    foot(0, "Pitch", t);
-    t[0] = '^';
-    t[1] = (char)('0' + set.par.pitch_cent / 10u);
-    t[2] = (char)('0' + set.par.pitch_cent % 10u);
-    t[3] = 0;
-    text_cat(t, " Hz");
-    foot(1, "fine", t);
-    foot(2, "Kind", sys == TS_EQUAL ? "Equal" : SYS_SHORT_B[sys]);
+    foot(1, t);
+    foot(2, sys == TS_EQUAL ? "Equal" : SYS_SHORT_B[sys]);
     if (sys == TS_EQUAL) {
         int_text(set.par.edo, t);
-        foot(3, "Parts", t);
+        text_cat(t, " parts");
     } else {
-        foot(3, "upon", PC_NAME[set.par.root]);
+        t[0] = 0;
+        text_cat(t, "on ");
+        text_cat(t, PC_NAME[set.par.root]);
     }
+    foot(3, t);
 }
 
 static void draw_room(void)
@@ -392,53 +385,48 @@ static void draw_room(void)
     int r, i;
     title(PAGE_TITLE[2], caption("where the organ stands"));
     for (r = 0; r < NROOMS; r++) {
-        int32_t y = 48 + r * 24, sel = r == set.par.room;
-        cv_text(14, y + 3, &KF_SC, sel ? "}" : NUM[r], sel ? P_RED : P_MID);
-        cv_text(32, y, sel ? &KF_ITAL : &KF_BODY, organ_room_name(r), sel ? P_RED : P_INK);
-        hline(12, y + 19, 104, P_RULE);
+        int32_t y = Y0 + r * 25, sel = r == set.par.room;
+        cv_text(14, y, &KF_SC, sel ? "}" : NUM[r], sel ? P_RED : P_MID);
+        cv_text(34, y, sel ? &KF_ITAL : &KF_NAME, organ_room_name(r), sel ? P_RED : P_INK);
+        if (r < NROOMS - 1)
+            hline(12, y + 22, 128, P_RULE);
     }
     {   /* the decay: an engraved curve over three seconds */
         float rt = 0.1f * (float)set.par.decay_ds;
-        cv_text(126, 48, &KF_SC, "the dying", P_RED);
-        for (i = 0; i < 100; i++) {
-            float tt = 3.0f * (float)i / 100.0f, v = 1.0f - tt / rt;
-            int32_t h = v > 0.0f ? (int32_t)(64.0f * v) : 0, y;
+        int32_t x0 = 148, w = 78, base = 134;
+        cv_text(x0, Y0, &KF_SC, "its dying", P_RED);
+        for (i = 0; i < w; i++) {
+            float tt = 3.0f * (float)i / (float)w, v = 1.0f - tt / rt;
+            int32_t h = v > 0.0f ? (int32_t)(52.0f * v) : 0, y;
             for (y = 0; y < h; y += 2)
-                cv_pset(126 + i, 132 - y, P_INK);
+                cv_pset(x0 + i, base - y, P_INK);
             if (h)
-                cv_pset(126 + i, 132 - h, P_INK);
+                cv_pset(x0 + i, base - h, P_INK);
         }
-        hline(126, 133, 100, P_INK);
+        hline(x0, base + 1, w, P_INK);
         for (i = 0; i < 4; i++)
-            vline(126 + i * 33, 133, 3, P_INK);
-        cv_text(124, 137, &KF_ITAL, "0", P_INK);
-        text_r(228, 137, &KF_ITAL, "3 seconds", P_INK);
+            vline(x0 + i * (w - 1) / 3, base + 1, 3, P_INK);
+        cv_text(x0 - 2, base + 4, &KF_ITAL, "0", P_INK);
+        text_r(x0 + w + 2, base + 4, &KF_ITAL, "3 s", P_INK);
     }
-    t[0] = 0;
-    text_cat(t, "share ");
-    int_text(set.par.mix, u);
-    text_cat(t, u);
-    text_cat(t, " in 100");
-    cv_text(126, 160, &KF_ITAL, t, P_INK);
     foot_rules();
-    foot(0, "Room", organ_room_name(set.par.room));
+    foot(0, organ_room_name(set.par.room));
+    t[0] = 0;
     if (set.par.blower_noise) {
-        int_text(set.par.blower_noise, t);
-        text_cat(t, " of 10");
+        text_cat(t, "blower ");
+        int_text(set.par.blower_noise, u);
+        text_cat(t, u);
     } else {
-        t[0] = 0;
-        text_cat(t, "silent");
+        text_cat(t, "blower silent");
     }
-    foot(1, "Blower", t);
+    foot(1, t);
     int_text(set.par.distance, t);
-    text_cat(t, " m");
-    foot(2, "Distance", t);
+    text_cat(t, " m away");
+    foot(2, t);
     dec_text(set.par.decay_ds, t);
-    for (i = 0; t[i]; i++)
-        if (t[i] == '.')
-            t[i] = '^';
-    text_cat(t, " s");
-    foot(3, "Decay", t);
+    dots_to_mid(t);
+    text_cat(t, " s decay");
+    foot(3, t);
 }
 
 static void draw_wind(void)
@@ -446,98 +434,93 @@ static void draw_wind(void)
     const organ_meter_t *m = organ_meter();
     char t[48], u[16];
     int i;
-    title(PAGE_TITLE[3], caption(set.trem ? "the tremulant beating" : "the bellows and the touch"));
+    if (m->last_vel) {                     /* the caption: the last key's touch, once there is one */
+        t[0] = 0;
+        text_cat(t, "the last key ");
+        int_text((int32_t)m->last_vel, u);
+        text_cat(t, u);
+        text_cat(t, ", open in ");
+        dec_text((int32_t)(m->last_open_us / 100u), u);
+        dots_to_mid(u);
+        text_cat(t, u);
+        text_cat(t, " ms");
+        title(PAGE_TITLE[3], t);
+    } else {
+        title(PAGE_TITLE[3], caption(set.trem ? "the tremulant beating" : "the bellows"));
+    }
     {   /* a wedge bellows, opened by the reservoir's pressure */
         int32_t p = clamp((int32_t)(m->pressure * 100.0f), 0, 110), rise = 6 + p * 22 / 100, y;
-        cv_rect(14, 92, 56, 6, P_INK);
-        for (y = 93; y < 97; y += 2)
+        cv_rect(14, 100, 56, 6, P_INK);
+        for (y = 101; y < 105; y += 2)
             hline(15, y, 54, P_PAPER);
-        cv_line(14, 92, 70, 92 - rise, P_INK);
-        cv_line(14, 90, 70, 90 - rise, P_INK);
-        vline(70, 92 - rise, rise, P_INK);
+        cv_line(14, 100, 70, 100 - rise, P_INK);
+        cv_line(14, 98, 70, 98 - rise, P_INK);
+        vline(70, 100 - rise, rise, P_INK);
         for (i = 1; i < 4; i++)
-            vline(14 + i * 14, 92 - rise * i / 4, rise * i / 4, P_RULE);
+            vline(14 + i * 14, 100 - rise * i / 4, rise * i / 4, P_RULE);
     }
-    cv_text(84, 46, &KF_SC, "the reservoir", P_RED);
+    cv_text(84, Y0, &KF_SC, "the reservoir", P_RED);
     int_text((int32_t)(m->pressure * 100.0f + 0.5f), t);
-    i = cv_text(84, 58, &KF_BIG, t, P_INK);
-    cv_text(i + 4, 72, &KF_ITAL, "parts", P_INK);
-    cv_text(84, 94, &KF_ITAL, "of its voiced pressure", P_INK);
-    dotted(12, 112, 216, 3, P_MID);        /* the voiced pressure; under it, the last six seconds */
+    i = cv_text(84, Y0 + 20, &KF_BIG, t, P_INK);
+    cv_text(i + 5, Y0 + 32, &KF_ITAL, "in 100", P_INK);
+    dotted(12, 120, 216, 3, P_MID);        /* the voiced pressure; under it, the last six seconds */
     for (i = 0; i < 59; i++) {
         int32_t a = ui.trace[(ui.trace_t / 100u + 1u + (uint32_t)i) % 60u], b = ui.trace[(ui.trace_t / 100u + 2u + (uint32_t)i) % 60u];
-        a = 112 + clamp(100 - a, -6, 40) * 36 / 40;
-        b = 112 + clamp(100 - b, -6, 40) * 36 / 40;
+        a = 120 + clamp(100 - a, -6, 28);
+        b = 120 + clamp(100 - b, -6, 28);
         cv_line(12 + i * 216 / 59, a, 12 + (i + 1) * 216 / 59, b, P_INK);
     }
     hline(12, 150, 216, P_INK);
-    cv_text(12, 152, &KF_ITAL, "six seconds past", P_INK);
-    text_r(228, 152, &KF_ITAL, "now", P_INK);
-    t[0] = 0;
-    text_cat(t, "the last key, at ");
-    int_text((int32_t)m->last_vel, u);
-    text_cat(t, u);
-    text_cat(t, ", opened in ");
-    dec_text((int32_t)(m->last_open_us / 100u), u);
-    for (i = 0; u[i]; i++)
-        if (u[i] == '.')
-            u[i] = '^';
-    text_cat(t, u);
-    text_cat(t, " ms");
-    cv_text(12, 172, &KF_BODY, t, P_INK);
+    cv_text(12, 154, &KF_ITAL, "six seconds past", P_INK);
+    text_r(228, 154, &KF_ITAL, "now", P_INK);
     foot_rules();
     if (set.par.pressure) {
         signed_text(set.par.pressure, t);
-        text_cat(t, " parts");
+        text_cat(t, " wind");
     } else {
         t[0] = 0;
         text_cat(t, "as voiced");
     }
-    foot(0, "Wind", t);
-    foot(1, "Steady", STEADY_B[set.par.steadiness]);
+    foot(0, t);
+    foot(1, STEADY_B[set.par.steadiness]);
     dec_text(set.par.trem_speed, t);
-    for (i = 0; t[i]; i++)
-        if (t[i] == '.')
-            t[i] = '^';
-    foot(2, "Beats", t);
-    foot(3, "Depth", DEPTH_B[set.par.trem_depth]);
+    dots_to_mid(t);
+    text_cat(t, " beats");
+    foot(2, t);
+    foot(3, DEPTH_B[set.par.trem_depth]);
 }
 
 static void draw_voicing(void)
 {
     char t[40], u[16];
-    int s, k, st = ui.voice_stop;
-    int32_t x;
-    title(PAGE_TITLE[4], caption("the voicing of each register"));
-    {                                       /* the four registers spread across the sheet, the chosen one red */
-        int32_t sum = 0, gap;
-        for (s = 0; s < NSTOPS; s++)
-            sum += text_w(s == st ? &KF_ITAL : &KF_BODY, STOP_DE[s]);
-        gap = (212 - sum) / (NSTOPS - 1);
-        x = 14;
-        for (s = 0; s < NSTOPS; s++) {
-            if (s == st) {
-                int32_t e = cv_text(x, 49, &KF_ITAL, STOP_DE[s], P_RED);
-                hline(x, 65, e - x, P_RED);
-                x = e + gap;
-            } else {
-                x = cv_text(x, 49, &KF_BODY, STOP_DE[s], P_INK) + gap;
-            }
-        }
+    int k, st = ui.voice_stop;
+    title(PAGE_TITLE[4], caption("strike a key to choose"));
+    {                                       /* the register being voiced, and where it sits among the four */
+        int32_t x;
+        t[0] = 0;
+        text_cat(t, STOP_DE[st]);
+        text_cat(t, " ");
+        text_cat(t, STOP_FUSS[st]);
+        x = text_c(120, Y0, &KF_ITAL, t, P_RED);
+        hline(240 - x, Y0 + 20, 2 * x - 240, P_RED);
+        for (k = 0; k < NSTOPS; k++)        /* four marks under it, the register's own filled */
+            if (k == st)
+                circle_hatch(105 + k * 10, Y0 + 28, 3, P_RED);
+            else
+                circle(105 + k * 10, Y0 + 28, 2, P_MID, 0);
     }
-    cv_text(14, 71, &KF_SC, "the strength of each pipe", P_RED);
-    hline(12, 120, 216, P_INK);
-    dotted(12, 105, 216, 3, P_MID);
-    dotted(12, 135, 216, 3, P_MID);
+    hline(12, 132, 216, P_INK);
+    dotted(12, 117, 216, 3, P_MID);
+    dotted(12, 147, 216, 3, P_MID);
     for (k = 0; k < KIST_NKEYS; k++) {
         int key = KIST_KEY_LO + k, db2 = set.voi.level_half_db[st][k];
-        int32_t px = 14 + k * 4, py = 120 - db2 * 3 / 2, sel = key == ui.voice_key;
+        int32_t px = 14 + k * 4, py = 132 - db2 * 3 / 2, sel = key == ui.voice_key;
         if (st == ST_QUINT && key < set.par.split)
             continue;
-        if (py < 120)
-            vline(px, py, 120 - py, P_INK);
-        else if (py > 120)
-            vline(px, 121, py - 120, P_INK);
+        if (py < 132)
+            vline(px, py, 132 - py, P_INK);
+        else if (py > 132)
+            vline(px, 133, py - 132, P_INK);
         if (sel) {
             circle_hatch(px, py, 3, P_RED);
             circle(px, py, 3, P_RED, 0);
@@ -545,144 +528,123 @@ static void draw_voicing(void)
             cv_rect(px - 1, py - 1, 2, 2, P_INK);
         }
     }
-    {
-        int32_t sx = 14 + (set.par.split - KIST_KEY_LO) * 4 - 2;
-        vline(sx, 84, 70, P_RED);
-        cv_text(sx + 3, 82, &KF_ITAL, "the division", P_RED);
-    }
+    vline(14 + (set.par.split - KIST_KEY_LO) * 4 - 2, 96, 60, P_RED);    /* the division */
     cv_text(12, 156, &KF_ITAL, "C", P_INK);
     text_r(228, 156, &KF_ITAL, "f'''", P_INK);
-    text_c(120, 172, &KF_ITAL, "strike a key to choose its pipe", P_INK);
     foot_rules();
-    t[0] = 0;
-    text_cat(t, STOP_DE[st]);
-    text_cat(t, st == ST_QUINT ? " 2`" : st == ST_GEDACKT ? " 8" : st == ST_ROHRFLOTE ? " 4" : " 2");
-    foot(0, "Stop", t);
+    foot(0, STOP_DE[st]);
     {
         int v = set.voi.level_half_db[st][ui.voice_key - KIST_KEY_LO];
-        char lab[16];
-        note_text(ui.voice_key, lab);
-        signed_text(v / 2, t);
+        note_text(ui.voice_key, t);
+        text_cat(t, " ");
+        signed_text(v / 2, u);
+        text_cat(t, u);
         if (v & 1)
             text_cat(t, "^5");
         text_cat(t, " dB");
-        foot(1, lab, t);
+        foot(1, t);
     }
-    int_text(set.voi.chiff[st], t);
-    text_cat(t, " of 4");
-    foot(2, "Chiff", set.voi.chiff[st] ? t : "none");
-    t[0] = '\\';
-    t[1] = 0;
+    t[0] = 0;
+    if (set.voi.chiff[st]) {
+        text_cat(t, "chiff ");
+        int_text(set.voi.chiff[st], u);
+        text_cat(t, u);
+    } else {
+        text_cat(t, "no chiff");
+    }
+    foot(2, t);
+    t[0] = 0;
+    text_cat(t, "drift \\");
     dec_text(set.voi.drift_dc[st], u);
-    for (k = 0; u[k]; k++)
-        if (u[k] == '.')
-            u[k] = '^';
+    dots_to_mid(u);
     text_cat(t, u);
-    text_cat(t, " c");
-    foot(3, "Drift", t);
+    foot(3, t);
 }
 
 static void ledger(int32_t y, const char *k, const char *v, uint16_t vc)   /* a row: name, dotted leader, value */
 {
-    int32_t x = cv_text(14, y, &KF_BODY, k, P_INK) + 4, vx = 226 - text_w(&KF_BODY, v) - 4;
+    int32_t x = cv_text(14, y, &KF_NAME, k, P_INK) + 4, vx = 226 - text_w(&KF_ITAL, v) - 4;
     if (vx > x)
-        dotted(x, y + 13, vx - x, 3, P_MID);
-    text_r(226, y, &KF_BODY, v, vc);
+        dotted(x, y + 15, vx - x, 3, P_MID);
+    text_r(226, y, &KF_ITAL, v, vc);
 }
 
 static void draw_system(void)
 {
     const organ_meter_t *m = organ_meter();
     char t[64], u[16];
-    title(PAGE_TITLE[5], caption("of the instrument itself"));
-    ledger(48, "MIDI received", "by the jack & by USB", P_INK);
-    if (set.midi_ch) {
-        int_text(set.midi_ch, t);
-    } else {
-        t[0] = 0;
-        text_cat(t, "any");
-    }
-    ledger(68, "upon channel", t, P_INK);
-    note_text(set.par.split - 1, t);
-    text_cat(t, " | ");
-    note_text(set.par.split, u);
-    text_cat(t, u);
-    ledger(88, "the division", t, P_INK);
-    if (set.midi_transpose) {
-        signed_text(set.midi_transpose, t);
-        text_cat(t, " semitones");
-    } else {
-        t[0] = 0;
-        text_cat(t, "not at all");
-    }
-    ledger(108, "transposed", t, P_INK);
-    ledger(128, "the second core", plat_cpu2_on() ? "at work" : cpu2_started ? "retired" : "at rest",
-           plat_cpu2_on() ? P_RED : P_INK);
-    ledger(148, "the memory", flash_id == 0x856014u ? "P25Q80, the older" : flash_id == 0xB36014u ? "UC25HQ80, the newer"
-                                                                                                 : "unknown: no saving",
-           flash_id == 0x856014u || flash_id == 0xB36014u ? P_INK : P_RED);
-    t[0] = 0;
+    t[0] = 0;                               /* the caption: what the organ is doing */
     text_cat(t, "work ");
     int_text((int32_t)m->load_pct, u);
     text_cat(t, u);
     text_cat(t, "%, pipes ");
     int_text((int32_t)m->pipes, u);
     text_cat(t, u);
-    text_cat(t, ", peak ");
-    int_text((int32_t)m->pipes_peak, u);
-    text_cat(t, u);
     text_cat(t, " of ");
     int_text((int32_t)m->pipe_cap, u);
     text_cat(t, u);
-    text_c(120, 172, &KF_ITAL, t, P_INK);
-    foot_rules();
-    if (set.midi_ch)
-        int_text(set.midi_ch, t);
-    else {
-        t[0] = 0;
-        text_cat(t, "any");
-    }
-    foot(0, "Channel", t);
-    t[0] = 0;
-    text_cat(t, "at ");
+    title(PAGE_TITLE[5], t);
+    ledger(Y0, "MIDI in", "jack and USB", P_INK);
+    note_text(set.par.split - 1, t);
+    text_cat(t, " | ");
     note_text(set.par.split, u);
     text_cat(t, u);
-    foot(1, "Division", t);
+    ledger(Y0 + 22, "the division", t, P_INK);
+    ledger(Y0 + 44, "second core", plat_cpu2_on() ? "at work" : cpu2_started ? "retired" : "at rest",
+           plat_cpu2_on() ? P_RED : P_INK);
+    ledger(Y0 + 66, "the memory", flash_id == 0x856014u ? "P25Q80" : flash_id == 0xB36014u ? "UC25HQ80" : "unknown",
+           flash_id == 0x856014u || flash_id == 0xB36014u ? P_INK : P_RED);
+    int_text((int32_t)m->pipes_peak, u);
+    ledger(Y0 + 88, "the most pipes", u, P_INK);
+    foot_rules();
+    t[0] = 0;
+    if (set.midi_ch) {
+        text_cat(t, "channel ");
+        int_text(set.midi_ch, u);
+        text_cat(t, u);
+    } else {
+        text_cat(t, "any channel");
+    }
+    foot(0, t);
+    t[0] = 0;
+    text_cat(t, "split ");
+    note_text(set.par.split, u);
+    text_cat(t, u);
+    foot(1, t);
     if (set.midi_transpose) {
         signed_text(set.midi_transpose, t);
+        text_cat(t, " semitones");
     } else {
         t[0] = 0;
-        text_cat(t, "none");
+        text_cat(t, "untransposed");
     }
-    foot(2, "Transpose", t);
+    foot(2, t);
 }
 
 static void draw_temperament(void)       /* the ALGORITHM pop-up, over the page */
 {
     static const char *const NUM[NTS] = {"i", "ii", "iii", "iv", "v"};
-    static const char *const YEAR[NTS] = {"", "1691", "a quarter comma", "1779", "c. 1750"};
+    static const char *const YEAR[NTS] = {"", "1691", "1/4 comma", "1779", "c. 1750"};
     int sel = ui.sys_pending >= 0 ? ui.sys_pending : set.par.system, i;
     cv_rect(9, 9, 222, 222, P_PAPER);
     sheet();
-    title("Temperament", "turn the Algorithm to choose");
+    title("Temperament", "it takes hold when still");
     for (i = 0; i < NTS; i++) {
-        int32_t y = 54 + i * 26;
+        int32_t y = Y0 + i * 26;
         char t[32];
         t[0] = 0;
         if (i == TS_EQUAL) {
-            text_cat(t, "in ");
-            int_text(set.par.edo, t + 3);
+            int_text(set.par.edo, t);
             text_cat(t, " parts");
         } else {
             text_cat(t, YEAR[i]);
         }
-        cv_text(16, y + 4, &KF_SC, i == sel ? "}" : NUM[i], i == sel ? P_RED : P_MID);
-        cv_text(34, y, i == sel ? &KF_NAME : &KF_BODY, i == TS_EQUAL ? "Equal" : SYS_LONG_B[i], i == sel ? P_RED : P_INK);
-        text_r(226, y + 3, &KF_ITAL, t, P_MID);
-        hline(12, y + 22, 216, P_RULE);
+        cv_text(16, y, &KF_SC, i == sel ? "}" : NUM[i], i == sel ? P_RED : P_MID);
+        cv_text(36, y, i == sel ? &KF_ITAL : &KF_NAME, i == TS_EQUAL ? "Equal" : SYS_LONG_B[i], i == sel ? P_RED : P_INK);
+        text_r(226, y, &KF_ITAL, t, P_MID);
+        hline(12, y + 23, 216, P_RULE);
     }
-    text_c(120, 192, &KF_ITAL, "it takes hold when the knob is still a moment;", P_INK);
-    text_c(120, 206, &KF_ITAL, "the key and the parts on page ii", P_INK);
+    text_c(120, 190, &KF_ITAL, "the key and parts on page ii", P_INK);
 }
 
 static void draw(void)

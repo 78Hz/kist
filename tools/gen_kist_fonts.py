@@ -17,10 +17,9 @@ PAD = 2                                    # as fm1-base's gen_font.py: the bitm
 REMAP = {"^": "·", "{": "ö", "}": "¶", "~": "ß", "_": "ſ", "\\": "±", "`": "⅔"}
 FACES = [                                  # role, file, pixel size
     ("TITLE", "UnifrakturMaguntia-Book.ttf", 22),
-    ("NAME", "IMFeENrm28P.ttf", 17),
-    ("BODY", "IMFeENrm28P.ttf", 14),
-    ("ITAL", "IMFeENit28P.ttf", 13),
-    ("SC", "IMFeENsc28P.ttf", 12),
+    ("NAME", "IMFeENrm28P.ttf", 17),           # the pipe names: the smallest size on the screen
+    ("ITAL", "IMFeENit28P.ttf", 17),
+    ("SC", "IMFeENsc28P.ttf", 17),
     ("BIG", "IMFeENrm28P.ttf", 30),
 ]
 FIRST, LAST = 32, 126
