@@ -61,6 +61,16 @@ and the richer room (one block, 5.8 ms, later). On some FM-1s it misreads shared
 hands back is checked before it reaches the speakers, and fm1-base retires it for good (until power-off) at the
 first sign of trouble. The organ is built to play fully on one core; the System page shows the core's state.
 
+## The screen
+
+The pages are drawn as a Baroque engraving: ink and red on paper, a double-ruled border, Fraktur titles and
+Fell types (`ui/engraving.c`). The four knobs are indexed i–iv along the foot of every page. The faces are
+rendered into bitmap fonts by `tools/gen_kist_fonts.py` (into `ui/kist_fonts.h`) from:
+
+- UnifrakturMaguntia, SIL Open Font License 1.1 (`assets/fonts/OFL-UnifrakturMaguntia.txt`)
+- IM Fell English, roman, italic and small capitals, by Igino Marini, SIL Open Font License 1.1
+  (`assets/fonts/OFL-IMFell.txt`)
+
 ## Building
 
     git clone --recursive <this repository>
