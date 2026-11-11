@@ -18,6 +18,26 @@ static void dotted(int32_t x, int32_t y, int32_t w, int32_t step, uint16_t c)
     for (i = 0; i < w; i += step)
         cv_pset(x + i, y, c);
 }
+/* a dotted straight line: Bresenham's steps, every other one inked, so the dots keep to one straight line */
+static void dotted_line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t c)
+{
+    int32_t dx = x1 > x0 ? x1 - x0 : x0 - x1, dy = y1 > y0 ? y0 - y1 : y1 - y0;
+    int32_t sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, e = dx + dy, n = 0, steps = dx > -dy ? dx : -dy;
+    for (;;) {
+        if (n & 1)
+            cv_pset(x0, y0, c);
+        if (n++ >= steps)
+            break;
+        if (2 * e >= dy) {
+            e += dy;
+            x0 += sx;
+        }
+        if (2 * e <= dx) {
+            e += dx;
+            y0 += sy;
+        }
+    }
+}
 static void frame(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c)
 {
     hline(x, y, w, c);
@@ -316,9 +336,8 @@ static void draw_tuning(void)
         for (i = 0; i < 12; i++) {          /* the notes' names round the outside, and their hands */
             float base = 30.0f * (float)i, ang, rad, co, si;
             int root = sys != TS_EQUAL && i == (int)set.par.root;
-            int32_t r;
             rad = (base - 90.0f) * 0.01745329f;
-            text_c(cx + (int32_t)(46.0f * fm_cosf(rad) + 0.5f) + 1, cy + (int32_t)(43.0f * fm_sinf(rad) + 0.5f) - 7, &KF_NOTE,
+            text_c(cx + (int32_t)(44.0f * fm_cosf(rad) + 0.5f) + 1, cy + (int32_t)(42.0f * fm_sinf(rad) + 0.5f) - 5, &KF_NOTE,
                    NOTE[i], root ? P_RED : P_MID);
             if (sys == TS_EQUAL && n != 12)
                 continue;                   /* a division: its own steps, no hands */
@@ -326,8 +345,8 @@ static void draw_tuning(void)
             rad = (ang - 90.0f) * 0.01745329f;
             co = fm_cosf(rad);
             si = fm_sinf(rad);
-            for (r = 4; r < R; r += 2)       /* dotted, from the centre to the ring */
-                cv_pset(cx + (int32_t)((float)r * co + 0.5f), cy + (int32_t)((float)r * si + 0.5f), root ? P_RED : P_INK);
+            dotted_line(cx, cy, cx + (int32_t)((float)(R - 1) * co + 0.5f), cy + (int32_t)((float)(R - 1) * si + 0.5f),
+                        root ? P_RED : P_INK);
         }
         if (sys == TS_EQUAL && n != 12) {
             int_text(n, t);

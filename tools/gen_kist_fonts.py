@@ -24,7 +24,7 @@ FACES = [                                  # role, file, pixel size
     ("ITAL", "IMFeENit28P.ttf", 16),           # captions
     ("VITAL", "IMFeENit28P.ttf", 18),          # a value in italic: the chosen one, or a long one
     ("SC", "IMFeENsc28P.ttf", 12),             # labels
-    ("NOTE", "IMFeENrm28P.ttf", 11),           # the note names round the Tuning page's dial
+    ("NOTE", "IMFeENrm28P.ttf", 9),            # the note names round the Tuning page's dial
     ("BIG", "IMFeENrm28P.ttf", 36),
 ]
 FIRST, LAST = 32, 126
