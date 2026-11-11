@@ -28,7 +28,29 @@ jobs:
         with:
           python-version: '3.12'
       - name: JieLi toolchain and AC79 SDK
-        uses: DimmKirr/setup-fm1-toolchain@e94bbde88481a257226cc9a58f69fd496ba7f73d
+        # setup-fm1-toolchain's mirrors (its release assets, checked against their sha256), without its apt step
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SDK: sdk-1.2.14_2026-10-13
+          TC: toolchain-20260730.1
+        run: |
+          set -euo pipefail
+          dir="$HOME/.fm1-toolchain"
+          mkdir -p "$dir" /tmp/fm1dl
+          cd /tmp/fm1dl
+          for tag in "$SDK" "$TC"; do
+            for attempt in 1 2 3; do
+              gh release download "$tag" --repo DimmKirr/setup-fm1-toolchain --clobber \
+                --pattern '*.tar.xz' --pattern '*.tar.xz.sha256' && break
+              sleep 15
+            done
+          done
+          sha256sum -c ./*.sha256
+          for f in ./*.tar.xz; do tar -xJf "$f" -C "$dir"; done
+          mv "$dir/sdk" "$dir/AC79_SDK"
+          test -d "$dir/toolchain" && test -d "$dir/AC79_SDK"
+          echo "JIELI_TOOLCHAIN=$dir/toolchain" >> "$GITHUB_ENV"
+          echo "AC79_SDK=$dir/AC79_SDK" >> "$GITHUB_ENV"
       - name: Host simulator and its scripted test
         env:
           CC: gcc                     # the host's compiler: the toolchain's clang (on PATH) has no host headers
