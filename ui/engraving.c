@@ -318,18 +318,16 @@ static void draw_tuning(void)
             int root = sys != TS_EQUAL && i == (int)set.par.root;
             int32_t r;
             rad = (base - 90.0f) * 0.01745329f;
-            text_c(cx + (int32_t)(43.0f * fm_cosf(rad) + 0.5f) + 1, cy + (int32_t)(43.0f * fm_sinf(rad) + 0.5f) - 7, &KF_SC,
-                   NOTE[i], root ? P_RED : P_INK);
+            text_c(cx + (int32_t)(46.0f * fm_cosf(rad) + 0.5f) + 1, cy + (int32_t)(43.0f * fm_sinf(rad) + 0.5f) - 7, &KF_NOTE,
+                   NOTE[i], root ? P_RED : P_MID);
             if (sys == TS_EQUAL && n != 12)
                 continue;                   /* a division: its own steps, no hands */
             ang = base + 3.0f * 0.3f * c[i];
             rad = (ang - 90.0f) * 0.01745329f;
             co = fm_cosf(rad);
             si = fm_sinf(rad);
-            for (r = 5; r <= R - 4; r += 2)
+            for (r = 4; r < R; r += 2)       /* dotted, from the centre to the ring */
                 cv_pset(cx + (int32_t)((float)r * co + 0.5f), cy + (int32_t)((float)r * si + 0.5f), root ? P_RED : P_INK);
-            cv_rect(cx + (int32_t)((float)(R - 4) * co + 0.5f) - 1, cy + (int32_t)((float)(R - 4) * si + 0.5f) - 1, 3, 3,
-                    root ? P_RED : P_INK);
         }
         if (sys == TS_EQUAL && n != 12) {
             int_text(n, t);
