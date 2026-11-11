@@ -1,0 +1,169 @@
+# SPDX-License-Identifier: MPL-2.0
+# KIST: every push builds and tests the firmware; a tag vX.Y also builds FM-1 Manager for each platform and makes
+# the release (the release firmware kist-X.Y.fwsc, firmware.json, the Manager's apps).
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v[0-9]*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: JieLi toolchain and AC79 SDK
+        uses: DimmKirr/setup-fm1-toolchain@e94bbde88481a257226cc9a58f69fd496ba7f73d
+      - name: Host simulator and its scripted test
+        run: |
+          set -euo pipefail
+          python3 fm1-base/tools/build.py . --host
+          build/host/kist_host tests/host/basic.txt build/host
+      - name: Engine tests (tuning, temperaments, render)
+        run: |
+          set -euo pipefail
+          tools/build_tools.sh
+          build/engine_test
+      - name: Firmware
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version=${GITHUB_REF_NAME#v}
+            python3 fm1-base/tools/build.py . --release "$version"
+            cp "build/kist-$version.fwsc" out/
+          else
+            python3 fm1-base/tools/build.py .
+            cp build/kist.fwsc out/
+          fi
+          cp build/firmware.json out/
+          cp build/host/*.png out/ 2>/dev/null || true
+          (cd out && sha256sum *.fwsc firmware.json > SHA256SUMS)
+          cat out/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: out/
+
+  manager:
+    needs: firmware
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04          # an older glibc: runs on more Linux systems
+            asset: fm1-manager-linux-x86_64
+          - os: windows-latest
+            asset: FM-1-Manager-Windows.exe
+          - os: macos-14
+            asset: FM-1-Manager-macOS-arm64.zip
+          - os: macos-15-intel
+            asset: FM-1-Manager-macOS-x86_64.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: fw
+      - name: Linux libraries (Tk, ALSA)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-tk tk8.6 libasound2
+      - name: Build
+        shell: bash
+        env:
+          FM1M_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '0.0.0' }}
+        run: |
+          set -euo pipefail
+          mkdir -p manager/firmware
+          cp fw/*.fwsc manager/firmware/
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet pyinstaller -r manager/requirements.txt
+          python -c "import tkinter, mido, rtmidi; print('Tk', tkinter.TkVersion)"
+          pyinstaller --noconfirm --distpath dist --workpath pyibuild manager/fm1_manager.spec
+          mkdir -p release
+          case "$RUNNER_OS" in
+            Linux)   cp dist/fm1-manager "release/${{ matrix.asset }}"; exe="dist/fm1-manager" ;;
+            Windows) cp "dist/FM-1 Manager.exe" "release/${{ matrix.asset }}"; exe="dist/FM-1 Manager.exe" ;;
+            macOS)   ditto -c -k --keepParent "dist/FM-1 Manager.app" "release/${{ matrix.asset }}"
+                     exe="dist/FM-1 Manager.app/Contents/MacOS/FM-1 Manager" ;;
+          esac
+          echo "EXE=$exe" >> "$GITHUB_ENV"
+          ls -la release
+      - name: Smoke test (the packaged tools answer)
+        shell: bash
+        continue-on-error: ${{ runner.os == 'Windows' }}
+        run: |
+          set -euo pipefail
+          "$EXE" --tool fm1_install.py --help | tee help.txt
+          grep -q "usage: fm1_install.py" help.txt
+          "$EXE" --tool fm1_backup.py --help | grep -q "usage: fm1_backup.py"
+          if [ "$RUNNER_OS" != Windows ]; then
+            "$EXE" --tool flash_tool.py --help | grep -q "usage: flash_tool.py"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manager-${{ matrix.os }}
+          path: release/
+
+  release:
+    needs: [firmware, manager]
+    if: startsWith(github.ref, 'refs/tags/') && !cancelled() && needs.firmware.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version=${GITHUB_REF_NAME#v}
+          mkdir files
+          cp art/firmware/*.fwsc art/firmware/firmware.json art/firmware/SHA256SUMS files/
+          cp art/firmware/console.png files/kist-screen.png 2>/dev/null || true
+          find art -path 'art/manager-*' -type f -exec cp {} files/ \;
+          ls -la files
+          cat > notes.md <<NOTES
+          KIST $version for the M-VAVE FM-1, and FM-1 Manager.
+
+          - **kist-$version.fwsc**: the firmware. Install it with FM-1 Manager, or
+            \`python3 fm1-base/tools/fm1_install.py kist-$version.fwsc\`.
+          - **FM-1 Manager**: macOS (Apple silicon / Intel), Windows, Linux. It installs any FM-1 firmware, puts
+            M-VAVE's back, and keeps backups; it comes with this KIST. See [manager/](https://github.com/$GH_REPO/tree/$GITHUB_REF_NAME/manager).
+
+          Take a whole-flash backup before the first install (FM-1 Manager → Whole flash). Not yet played on a
+          real FM-1: install at your own risk, and report what you find.
+          NOTES
+          flags=()
+          if [[ "$version" == *-* || "$version" == 0.* ]]; then flags=(--prerelease); fi
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" files/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" files/* --title "KIST $version" --notes-file notes.md "${flags[@]}"
+          fi

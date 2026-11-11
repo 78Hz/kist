@@ -1,2 +1,8 @@
 build/
 *.wav
+__pycache__/
+*.pyc
+.venv/
+manager/firmware/
+manager/dist/
+manager/build/

@@ -1,5 +1,7 @@
 # KIST
 
+![KIST's screens](docs/img/screens.png)
+
 A physically modelled continuo organ for the M-VAVE FM-1, after the Dutch box organs (kistorgels) of the Klop
 workshop: one manual, four wooden stops, every pipe computed live as a digital waveguide. No samples.
 
@@ -73,7 +75,7 @@ rendered into bitmap fonts by `tools/gen_kist_fonts.py` (into `ui/kist_fonts.h`)
 
 ## Building
 
-    git clone --recursive <this repository>
+    git clone --recursive https://github.com/78Hz/kist
     python3 fm1-base/tools/build.py . --host        # the simulator: build/host/kist_host
     build/host/kist_host tests/host/basic.txt build/host     # the scripted test, with screenshots
 
@@ -88,11 +90,35 @@ The toolchain and SDK: `fm1-base/tools/get_toolchain.sh`, or the mirrors of
 
 ## Installing
 
-First take a full flash backup with a recovery tool that supports your FM-1's flash chip. Then
-`python3 fm1-base/tools/fm1_install.py build/kist.fwsc`. Both FM-1 flash chips are recognised (the older Puya P25Q80,
-the newer UC25HQ80); on an unknown chip the organ plays but does not save. SAVE writes the flash, which stops
-everything for a moment, the sound too: save between pieces. To go back: M-VAVE's firmware through
-fm1-base's installer, or felucca-bsp's `tools/fm1_rescue.sh` for an FM-1 that does not start.
+Download `kist-X.Y.fwsc` from the [latest release](https://github.com/78Hz/kist/releases/latest), then either:
+
+- **FM-1 Manager** (the same release, for macOS, Windows and Linux): open it, add the file under Firmware and
+  press *Install on FM-1*. It also takes backups and puts M-VAVE's firmware back. See [manager/](manager/).
+- **The command line**: `python3 fm1-base/tools/fm1_install.py kist-X.Y.fwsc`
+  (`pip install mido python-rtmidi` first).
+
+Connect the FM-1 straight to the computer with a USB data cable, switched on as normal: no update mode is needed.
+Before the first install, take a whole-flash backup (FM-1 Manager → Whole flash) while M-VAVE's firmware is
+still on it.
+
+Both FM-1 flash chips are recognised (the older Puya P25Q80, the newer UC25HQ80); on an unknown chip the organ
+plays but does not save. SAVE writes the flash, which stops everything for a moment, the sound too: save between
+pieces. The saved setup can be backed up and restored over USB (FM-1 Manager → Saved data).
+
+To go back: install M-VAVE's `FM-1.fwsc` the same way (or with M-VAVE's M-UPGRADE). An FM-1 that won't start
+shows SAFE MODE after two tries, where USB still works; failing that, FM-1 Manager → Whole flash → *Put M-VAVE
+firmware back*, or felucca-bsp's `tools/fm1_rescue.sh`.
+
+## Releases
+
+A tag `vX.Y` builds everything on GitHub (`.github/workflows/build.yml`): the release firmware
+(`kist-X.Y.fwsc`, identity FM-1_57XXYY00, and `firmware.json`), the tests, and FM-1 Manager for each platform.
+Every push to main builds and tests the firmware the same way.
+
+## Licence
+
+KIST is under the [Mozilla Public License 2.0](LICENSE), as fm1-base and felucca-bsp. The screen's faces are
+under the SIL Open Font License 1.1 (see *The screen*).
 
 ## Not yet known
 
