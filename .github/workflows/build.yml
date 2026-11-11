@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0
-# KIST: every push builds and tests the firmware; a tag vX.Y also builds FM-1 Manager for each platform and makes
+# KIST: every push builds and tests the firmware; a tag vX.Y, or a run by hand with a version, also builds FM-1 Manager for each platform and makes
 # the release (the release firmware kist-X.Y.fwsc, firmware.json, the Manager's apps).
 name: Build
 
@@ -9,9 +9,18 @@ on:
     tags: ['v[0-9]*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: 'Release this commit as version X.Y (tag vX.Y): empty for a build only'
+        required: false
+        default: ''
 
 permissions:
   contents: read
+
+env:
+  # the version a release is built as: the tag's, or the one asked for when run by hand; empty for a build only
+  VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || (github.event_name == 'workflow_dispatch' && inputs.release != '' && format('v{0}', inputs.release) || '') }}
 
 concurrency:
   group: build-${{ github.ref }}
@@ -71,8 +80,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            version=${GITHUB_REF_NAME#v}
+          if [[ -n "$VERSION" ]]; then
+            version=${VERSION#v}
             python3 fm1-base/tools/build.py . --release "$version"
             cp "build/kist-$version.fwsc" out/
           else
@@ -90,7 +99,7 @@ jobs:
 
   manager:
     needs: firmware
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -127,7 +136,7 @@ jobs:
       - name: Build
         shell: bash
         env:
-          FM1M_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '0.0.0' }}
+          FM1M_VERSION: ${{ env.VERSION != '' && env.VERSION || '0.0.0' }}
         run: |
           set -euo pipefail
           mkdir -p manager/firmware
@@ -163,7 +172,7 @@ jobs:
 
   release:
     needs: [firmware, manager]
-    if: startsWith(github.ref, 'refs/tags/') && !cancelled() && needs.firmware.result == 'success'
+    if: needs.firmware.result == 'success' && !cancelled() && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release != ''))
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -177,7 +186,9 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          version=${GITHUB_REF_NAME#v}
+          tag=$VERSION
+          version=${tag#v}
+          [[ "$version" =~ ^[0-9]{1,2}\.[0-9]{1,2}(\.[0-9]{1,2})?(-[A-Za-z0-9]+)?$ ]] || { echo "bad version $version"; exit 1; }
           mkdir files
           cp art/firmware/*.fwsc art/firmware/firmware.json art/firmware/SHA256SUMS files/
           cp art/firmware/console.png files/kist-screen.png 2>/dev/null || true
@@ -189,15 +200,15 @@ jobs:
           - **kist-$version.fwsc**: the firmware. Install it with FM-1 Manager, or
             \`python3 fm1-base/tools/fm1_install.py kist-$version.fwsc\`.
           - **FM-1 Manager**: macOS (Apple silicon / Intel), Windows, Linux. It installs any FM-1 firmware, puts
-            M-VAVE's back, and keeps backups; it comes with this KIST. See [manager/](https://github.com/$GH_REPO/tree/$GITHUB_REF_NAME/manager).
+            M-VAVE's back, and keeps backups; it comes with this KIST. See [manager/](https://github.com/$GH_REPO/tree/$tag/manager).
 
           Take a whole-flash backup before the first install (FM-1 Manager → Whole flash). Not yet played on a
           real FM-1: install at your own risk, and report what you find.
           NOTES
           flags=()
           if [[ "$version" == *-* || "$version" == 0.* ]]; then flags=(--prerelease); fi
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" files/* --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" files/* --title "KIST $version" --notes-file notes.md "${flags[@]}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" files/* --clobber
+          else                          # (a new tag at this commit, when run by hand)
+            gh release create "$tag" files/* --target "$GITHUB_SHA" --title "KIST $version" --notes-file notes.md "${flags[@]}"
           fi

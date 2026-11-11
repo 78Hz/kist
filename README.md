@@ -111,7 +111,7 @@ firmware back*, or felucca-bsp's `tools/fm1_rescue.sh`.
 
 ## Releases
 
-A tag `vX.Y` builds everything on GitHub (`.github/workflows/build.yml`): the release firmware
+A tag `vX.Y`, or running the Build workflow by hand with a version, builds everything on GitHub (`.github/workflows/build.yml`): the release firmware
 (`kist-X.Y.fwsc`, identity FM-1_57XXYY00, and `firmware.json`), the tests, and FM-1 Manager for each platform.
 Every push to main builds and tests the firmware the same way.
 
