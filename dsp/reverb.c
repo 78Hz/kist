@@ -3,7 +3,8 @@
 #include "organ.h"
 #include "fastmath.h"
 #include "plat.h"
-#include <string.h>
+#define memset __builtin_memset   /* no libc headers in the firmware build */
+#define memcpy __builtin_memcpy
 
 #define RV_FS KIST_FS
 #define RV_SIZE_MAX 1.3f

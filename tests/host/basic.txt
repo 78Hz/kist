@@ -1,0 +1,102 @@
+# KIST in the host simulator:  python3 fm1-base/tools/build.py . --host
+#   build/host/kist_host tests/host/basic.txt build/host
+wait 800
+shot console.png
+expect page 0
+expect halves 3
+expect blower 1
+# the stops: FX takes the Gedackt's bass off and back; ARP draws the Quint (treble only)
+tap FX
+expect halves 2
+tap FX
+tap ARP
+expect halves 131
+# a key on the FM-1: key 7 is C4 = c' (treble): Gedackt treble and Quint
+key 7 down 100
+wait 300
+expect notes 1
+expect pipes 2
+shot console_playing.png
+key 7 up
+wait 800
+expect notes 0
+# MIDI in from the TRS jack (the Osmose): a C major chord, all treble + bass
+midi TRS 90 30 64
+midi TRS 90 3C 64
+midi TRS 90 40 64
+midi TRS 90 43 64
+wait 400
+expect notes 4
+midi TRS B0 7B 00
+wait 800
+expect notes 0
+# REC: cancel all stops, then undo
+tap REC
+expect halves 0
+tap REC
+expect halves 131
+# TUNING: A = 415.37, then 1/4-comma meantone after the knob rests
+turn SELECT 1
+expect page 1
+turn K1 -25 400
+expect pitch 41500
+turn K2 37
+expect pitch 41537
+turn K3 2
+wait 200
+expect system 0
+wait 700
+expect system 2
+shot tuning_meantone.png
+# equal again, 31 divisions
+turn K3 -2
+wait 800
+turn K4 19
+expect edo 31
+shot tuning_31edo.png
+# the hundredths carry into the hertz
+turn K2 70
+expect pitch 41607
+# ROOM: the abbey, mix on PRESETS
+turn SELECT 1
+turn K1 2
+expect room 3
+turn PRESET 5
+expect mix 40
+shot room.png
+# WIND: the tremulant (SEQ) and the blower (PLAY)
+turn SELECT 1
+tap SEQ
+expect trem 1
+key 7 down 100
+wait 1500
+shot wind_trem.png
+tap PLAY
+expect blower 0
+wait 4000
+shot wind_blower_off.png
+key 7 up
+tap PLAY
+wait 2500
+expect pressure 100
+# VOICING: a key picks the note, K2 its level
+turn SELECT 1
+tapkey 9 100
+turn K2 4
+shot voicing.png
+# SYSTEM
+turn SELECT 1
+expect page 5
+shot system.png
+# the ALGORITHM overlay
+turn ALGO 1
+wait 100
+shot temperament_overlay.png
+wait 2500
+# octave: OCT+ then both
+tap OCT+
+expect octave 1
+# SAVE keeps the setup
+tap SAVE
+expect dirty 0
+expect store_writes 1

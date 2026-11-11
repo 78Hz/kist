@@ -65,6 +65,8 @@ typedef struct {
     volatile uint32_t last_vel, last_open_us;   /* the last note's velocity and its valve opening time */
     volatile uint32_t os_pipes;            /* pipes running 2x oversampled on the second core */
     volatile uint32_t rich_reverb;         /* 1 while the second core runs the richer room */
+    volatile uint32_t load_pct;            /* the last block's render time, % of its budget */
+    volatile uint32_t pipe_cap;            /* pipes allowed now (48, less when the render runs long) */
 } organ_meter_t;
 
 void organ_init(void);

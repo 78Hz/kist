@@ -18,7 +18,8 @@
 #include "calib_table.h"
 #include "fastmath.h"
 #include "plat.h"
-#include <string.h>
+#define memset __builtin_memset   /* no libc headers in the firmware build */
+#define memcpy __builtin_memcpy
 
 #define FS KIST_FS
 #define CR 16u                             /* control rate: valves, wind and smoothing every 16 samples */
@@ -105,7 +106,7 @@ typedef struct {
     float gain, gain_t, gl, gr;
     float hz;                              /* the sounding frequency asked for */
     uint32_t rng, quiet, age;
-    uint8_t active, closing, stop, os, cls, idx;
+    uint8_t active, closing, stop, os, cls, idx, side, core2, dead;
     int8_t note;
 } pipe_t;
 
@@ -127,18 +128,6 @@ static inline __attribute__((always_inline)) float rnd(uint32_t *s)
     x ^= x << 5;
     *s = x;
     return (float)(int32_t)x * (1.0f / 2147483648.0f);
-}
-
-static inline __attribute__((always_inline)) float lagrange(const float *b, uint32_t mask, uint32_t w, float d)
-{
-    int32_t i = (int32_t)d;
-    float f = d - (float)i;
-    float x0 = b[(w - (uint32_t)i + 1u) & mask], x1 = b[(w - (uint32_t)i) & mask];
-    float x2 = b[(w - (uint32_t)i - 1u) & mask], x3 = b[(w - (uint32_t)i - 2u) & mask];
-    float fm1 = f - 1.0f, fm2 = f - 2.0f, fp1 = f + 1.0f;
-    float c0 = -f * fm1 * fm2 * (1.0f / 6.0f), c1 = fp1 * fm1 * fm2 * 0.5f;
-    float c2 = -fp1 * f * fm2 * 0.5f, c3 = fp1 * f * fm1 * (1.0f / 6.0f);
-    return c0 * x0 + c1 * x1 + c2 * x2 + c3 * x3;
 }
 
 /* a fractional delay's taps, worked out once per control step (16 samples) and applied to every sample of it */
@@ -183,49 +172,6 @@ static inline __attribute__((always_inline)) float pipe_tick_q(pipe_t *p, float 
     p->wb = (p->wb + 1u) & p->mask;
     p->bore[p->wb] = in + 1e-20f;
     return in + p->tap * t;
-}
-
-/* the same with the delays read directly (the probe) */
-static inline __attribute__((always_inline)) float pipe_tick(pipe_t *p, float breath, float jet_d, float noise)
-{
-    float b = lagrange(p->bore, p->mask, p->wb, p->bore_d), t, pd, pj, jt, in;
-    p->lpb += p->a_bore * (b - p->lpb);
-    t = p->sign * p->loop_g * p->lpb;
-    p->dc_out = t - p->dc_in + (1.0f - p->a_dc) * p->dc_out;
-    p->dc_in = t;
-    t = p->dc_out;
-    pd = breath * (1.0f + noise * rnd(&p->rng)) - JET_REFL * t;
-    p->wj = (p->wj + 1u) & p->mask;
-    p->jet[p->wj] = pd;
-    pj = lagrange(p->jet, p->mask, p->wj, jet_d);
-    p->lpj += p->a_jet * (pj - p->lpj);
-    jt = p->lpj * (p->lpj * p->lpj - 1.0f);
-    if (jt > 1.0f)
-        jt = 1.0f;
-    if (jt < -1.0f)
-        jt = -1.0f;
-    in = jt + END_REFL * t;
-    p->wb = (p->wb + 1u) & p->mask;
-    p->bore[p->wb] = in + 1e-20f;
-    return in + p->tap * t;
-}
-
-/* the radiated sound: lowpass, the chimney's resonance, DC out */
-static inline __attribute__((always_inline)) float pipe_radiate(pipe_t *p, float in)
-{
-    float y, v;
-    p->out_lp += p->a_out * (in - p->out_lp);
-    y = p->out_lp;
-    if (p->c_mix > 0.0f) {                 /* a resonator (biquad bandpass, transposed direct form II) */
-        v = p->c_b0 * y + p->c_z1;
-        p->c_z1 = -p->c_a1 * v + p->c_z2;
-        p->c_z2 = -p->c_b0 * y - p->c_a2 * v;
-        y += p->c_mix * v;
-    }
-    v = y - p->hp_x + p->a_hp * p->hp_y;
-    p->hp_x = y;
-    p->hp_y = v;
-    return v;
 }
 
 static float one_pole(float fc, float fs)
@@ -401,12 +347,14 @@ static void pipe_close(int i, float ms)
 
 /* a free pipe slot: one free, else the oldest closing, else the least important of the oldest notes (when
  * stop's priority is higher) */
+static int pipe_cap_now(void);
 static int pipe_slot(int stop)
 {
     int i, best = -1;
-    for (i = 0; i < KIST_MAX_PIPES; i++)
-        if (!pipes[i].active)
-            return i;
+    if (pipe_cap_now())
+        for (i = 0; i < KIST_MAX_PIPES; i++)
+            if (!pipes[i].active)
+                return i;
     for (i = 0; i < KIST_MAX_PIPES; i++)   /* the oldest pipe already closing */
         if (pipes[i].closing && (best < 0 || pipes[i].age < pipes[best].age))
             best = i;
@@ -478,13 +426,9 @@ static void pipe_start(int n, int stop)
     p->open_step = nt->open_step * (os ? 0.5f : 1.0f);
     p->surge = SURGE;
     p->surge_dec = fm_expf(-(float)CR / (0.018f * fs));
-    p->gain = 0.0f;
     p->gain_t = reg_gain(stop, key);
-    {                                      /* the chest: C side left, C# side right, a little spread by pitch */
-        float side = (key & 1) ? 1.0f : -1.0f, x = 0.5f + 0.5f * side * (0.25f + 0.35f * (float)(key - 36) / 53.0f);
-        p->gl = fm_sqrtf(1.0f - x);
-        p->gr = fm_sqrtf(x);
-    }
+    p->gain = p->gain_t;
+    p->side = (uint8_t)(key & 1);          /* the chest: the C side and the C# side, each a bus (panned at the mix) */
     p->age = ++age_counter;
     p->active = 1;
     os_count += os;
@@ -749,7 +693,10 @@ void organ_panic(void) { q_push(EV_PANIC, 0, 0); }
 void organ_use_cpu2(int on) { (void)on; }
 const organ_meter_t *organ_meter(void) { return &meter; }
 
-void organ_shed(void)
+static volatile int shed_req;
+void organ_shed(void) { shed_req = 1; }   /* any context: the render does it at its next block */
+
+static void shed_now(void)
 {
     int i, k;
     for (k = 0; k < 4; k++) {              /* the four least important, oldest pipes close */
@@ -800,9 +747,8 @@ static void wind_block(uint32_t n)
     for (i = 0; i < (int)steps; i++) {
         float target, acc;
         /* the blower spins up in about 1.5 s and down in about 2 s */
-        wind.spin += blower_want ? (1.0f - wind.spin) * dt / 0.5f : -wind.spin * dt / 0.7f;
-        if (wind.spin < 0.0f)
-            wind.spin = 0.0f;
+        wind.spin += blower_want ? dt / 1.5f : -dt / 2.0f;
+        wind.spin = fm_clampf(wind.spin, 0.0f, 1.0f);
         target = trim * wind.spin * (1.0f - SAG[s] * d / 24.0f);
         if (wind.spin < 0.05f && !blower_want) {   /* off: the reservoir empties as the pipes take it */
             float leak = (0.15f + 0.08f * d) * dt;
@@ -824,16 +770,94 @@ static void wind_block(uint32_t n)
     meter.pressure = wind.p;
 }
 
-/* render one pipe into l/r (n frames at its own rate: 2n when oversampled), its valve and smoothing every CR */
+/* CR samples of a pipe, its state in locals (the delay lines' writes cannot alias it) and no branch per sample but
+ * the jet's clamp. CHIM: the chimney's resonator (the Rohrflöte) */
+#define PIPE_RUN(NAME, CHIM)                                                                                          \
+static void NAME(pipe_t *p, float *__restrict bus, uint32_t cr, float breath, float bnoise, const frac_t *qb,      \
+                 const frac_t *qj, float g)                                                                          \
+{                                                                                                                    \
+    float *__restrict d = p->bore;         /* the bore line, then the jet line (p->jet = d + len) */                 \
+    const uint32_t mask = p->mask, len = mask + 1u, ib = qb->i, ij = qj->i;                                          \
+    const float sg = p->sign * p->loop_g;  /* the reflection folded into the bore's taps */                           \
+    const float b0 = sg * qb->c0, b1 = sg * qb->c1, b2 = sg * qb->c2, b3 = sg * qb->c3, jfr = qj->c0;                 \
+    const float a_bore = p->a_bore, a_jet = p->a_jet, k_dc = 1.0f - p->a_dc, a_out = p->a_out, tap = p->tap;         \
+    const float cb0 = p->c_b0, ca1 = p->c_a1, ca2 = p->c_a2, cmix = p->c_mix;                                         \
+    float u = p->lpb, lpj = p->lpj, dc_in = p->dc_in, dc_out = p->dc_out, out_lp = p->out_lp;                         \
+    float z1 = p->c_z1, z2 = p->c_z2;                                                                                \
+    uint32_t w = p->wb, rng = p->rng, j;   /* the bore and the jet are written at the same index each sample */       \
+    (void)cb0; (void)ca1; (void)ca2; (void)cmix; (void)z1; (void)z2;                                                 \
+    for (j = 0; j < cr; j++) {                                                                                       \
+        uint32_t rb = w - ib, rj = w - ij;                                                                           \
+        float t, pd, pj, jt, in, y;                                                                                  \
+        u += a_bore * (b0 * d[(rb + 1u) & mask] + b1 * d[rb & mask] + b2 * d[(rb - 1u) & mask] +                     \
+                       b3 * d[(rb - 2u) & mask] - u);                                                                \
+        dc_out = u - dc_in + k_dc * dc_out;                                                                          \
+        dc_in = u;                                                                                                   \
+        t = dc_out;                                                                                                  \
+        rng = rng * 1664525u + 1013904223u;                                                                          \
+        pd = breath + bnoise * (float)(int32_t)rng - JET_REFL * t;                                                   \
+        w = (w + 1u) & mask;                                                                                         \
+        d[len + w] = pd;                                                                                             \
+        pj = d[len + ((rj + 1u) & mask)];                                                                            \
+        pj += jfr * (d[len + (rj & mask)] - pj);                                                                     \
+        lpj += a_jet * (pj - lpj);                                                                                   \
+        jt = lpj * (lpj * lpj - 1.0f);                                                                               \
+        jt = jt > 1.0f ? 1.0f : jt < -1.0f ? -1.0f : jt;                                                             \
+        in = jt + END_REFL * t;                                                                                      \
+        d[w] = in + 1e-20f;                                                                                          \
+        y = in + tap * t;                                                                                            \
+        out_lp += a_out * (y - out_lp);                                                                              \
+        y = out_lp;                                                                                                  \
+        if (CHIM) {                                                                                                  \
+            float c = cb0 * y + z1;                                                                                  \
+            z1 = -ca1 * c + z2;                                                                                      \
+            z2 = -cb0 * y - ca2 * c;                                                                                 \
+            y += cmix * c;                                                                                           \
+        }                                                                                                            \
+        bus[j] += y * g;                                                                                             \
+    }                                                                                                                \
+    p->lpb = u; p->lpj = lpj; p->dc_in = dc_in; p->dc_out = dc_out; p->out_lp = out_lp;                              \
+    p->c_z1 = z1; p->c_z2 = z2; p->wb = w; p->rng = rng;                                                             \
+}
+PIPE_RUN(pipe_run_plain, 0)
+PIPE_RUN(pipe_run_chimney, 1)
+
+/* the render's pipe budget: a pipe is started only while fewer than this sound (it follows the measured cost) */
+static int pipe_cap = KIST_MAX_PIPES;
+static int pipe_cap_now(void) { return pipes_active() < pipe_cap; }
+static uint32_t cap_calm;                  /* blocks in a row with room to spare */
+
+/* after each block: the time it took against its budget. Over 70 %: no more pipes than now; over 85 %: the least
+ * important close; under 50 % for a second: one more allowed again, up to 48 */
+static void budget(uint32_t ticks, uint32_t n, int np)
+{
+    uint32_t avail = (uint32_t)((float)n * (1e6f * (float)PLAT_TICKS_PER_US) / FS), pct = ticks * 100u / (avail ? avail : 1u);
+    if (pct > 70u) {
+        pipe_cap = np > 16 ? np : 16;
+        cap_calm = 0;
+        if (pct > 85u)
+            shed_now();
+    } else if (pct < 50u) {
+        if (++cap_calm > 170u && pipe_cap < KIST_MAX_PIPES) {
+            pipe_cap++;
+            cap_calm = 150u;
+        }
+    } else {
+        cap_calm = 0;
+    }
+    meter.load_pct = pct;
+    meter.pipe_cap = (uint32_t)pipe_cap;
+}
+
+/* render one pipe into l/r (n frames at its own rate: 2n when oversampled): its valve, wind and smoothing every CR */
 static void pipe_block(int i, float *l, float *r, uint32_t n)
 {
     pipe_t *p = &pipes[i];
     uint32_t mul = p->os ? 2u : 1u, total = n * mul, cr = CR * mul, s, k = 0;
     float peak = 0.0f;
     for (s = 0; s < total; s += cr, k++) {
-        float pf, jt, b0 = p->breath, nz0 = p->noise, bt, nzt, inv = 1.0f / (float)cr;
-        float g0 = p->gain, gt;
-        uint32_t j;
+        float pf, jt, bt, a;
+        frac_t qb, qj;
         if (p->closing) {
             p->valve -= p->close_step * (float)cr;
             if (p->valve < 0.0f)
@@ -849,35 +873,26 @@ static void pipe_block(int i, float *l, float *r, uint32_t n)
         jt = pf > 0.30f ? p->jet_0 / fm_sqrtf(pf) : p->jet_0 * JET_STRETCH;
         if (jt > p->jet_0 * JET_STRETCH)
             jt = p->jet_0 * JET_STRETCH;
-        nzt = p->noise_base + p->chiff_now;
+        p->noise = p->noise_base + p->chiff_now;
         p->chiff_now *= p->chiff_dec;
         p->bore_d += 0.1f * (p->bore_t - p->bore_d);
-        gt = p->gain_t;
-        {
-            frac_t qb, qj;
-            frac_set(&qb, p->bore_d);
-            frac_set(&qj, jt);
-            for (j = 0; j < cr; j++) {
-                float x = (float)j * inv, y;
-                y = pipe_radiate(p, pipe_tick_q(p, b0 + (bt - b0) * x, &qb, &qj, nz0 + (nzt - nz0) * x));
-                y *= g0 + (gt - g0) * x;
-                if (y > peak)
-                    peak = y;
-                else if (-y > peak)
-                    peak = -y;
-                l[s + j] += y * p->gl;
-                r[s + j] += y * p->gr;
-            }
-        }
-        p->breath = bt;
-        p->jet_d = jt;
-        p->noise = nzt;
-        p->gain = gt;
+        p->gain += 0.25f * (p->gain_t - p->gain);
+        frac_set(&qb, p->bore_d);
+        qj.i = (uint32_t)(int32_t)jt;
+        qj.c0 = jt - (float)(int32_t)jt;
+        (p->c_mix > 0.0f ? pipe_run_chimney : pipe_run_plain)(p, (p->side ? r : l) + s, cr, bt,
+                                                                bt * p->noise * (1.0f / 2147483648.0f), &qb, &qj, p->gain);
+        a = fm_fabsf(p->out_lp) * p->gain;
+        if (a > peak)
+            peak = a;
+        a = fm_fabsf(p->lpb) * p->gain;
+        if (a > peak)
+            peak = a;
     }
     if (p->closing && p->valve <= 0.0f) {
         if (peak < 3e-5f) {
             if (++p->quiet > 3u)
-                pipe_free(i);
+                p->dead = 1;               /* freed by the first core after the block (either core may run this) */
         } else {
             p->quiet = 0;
         }
@@ -898,12 +913,14 @@ static void decimate(const float *in, float *hist, float *out, uint32_t n)
             acc += hb_h[HB_TAPS / 2 + k] * (x[HB_TAPS / 2 + k] + x[HB_TAPS / 2 - k]);
         out[s] = acc;
     }
-    memmove(hist, hist + 2u * n, (HB_TAPS - 1) * sizeof(float));
+    for (s = 0; s < HB_TAPS - 1u; s++)   /* (no memmove in the firmware: the ranges do not overlap for n >= 15) */
+        hist[s] = hist[s + 2u * n];
 }
 
 static float dry_l[BLOCK_MAX], dry_r[BLOCK_MAX];          /* this block's dry sum */
 static float prev_l[BLOCK_MAX], prev_r[BLOCK_MAX];        /* the last block's, for the room on the second core */
 static float wet_l[BLOCK_MAX], wet_r[BLOCK_MAX];          /* the room's output from the second core */
+static float c2_l[BLOCK_MAX], c2_r[BLOCK_MAX];            /* the 1x pipes the second core took, by chest side */
 
 static int finite_bounded(const float *a, uint32_t n)
 {
@@ -932,9 +949,15 @@ static void os_pipes(uint32_t n)
 static void cpu2_job(uint32_t arg)
 {
     uint32_t n = job_n, m = job_prev_n;
+    int i;
     (void)arg;
     if (os_count)
         os_pipes(n);
+    memset(c2_l, 0, n * sizeof(float));
+    memset(c2_r, 0, n * sizeof(float));
+    for (i = 0; i < KIST_MAX_PIPES; i++)
+        if (pipes[i].active && pipes[i].core2)
+            pipe_block(i, c2_l, c2_r, n);
     memset(wet_l, 0, m * sizeof(float));
     memset(wet_r, 0, m * sizeof(float));
     reverb_process(prev_l, prev_r, wet_l, wet_r, m);
@@ -942,7 +965,7 @@ static void cpu2_job(uint32_t arg)
 
 void organ_render(float *l, float *r, uint32_t n)
 {
-    uint32_t s;
+    uint32_t s, t0 = plat_ticks24();
     int i, use2, np = 0, nos = 0, handed;
     if (n > BLOCK_MAX)
         n = BLOCK_MAX;
@@ -965,6 +988,10 @@ void organ_render(float *l, float *r, uint32_t n)
                 pipes[i].gain_t = reg_gain(pipes[i].stop, notes[pipes[i].note].key);
     }
     events();
+    if (shed_req) {
+        shed_req = 0;
+        shed_now();
+    }
     for (i = 0; i < KIST_MAX_NOTES; i++) { /* a released note whose pipes have all gone is free again */
         int k, any = 0;
         if (!notes[i].used || notes[i].held)
@@ -987,29 +1014,80 @@ void organ_render(float *l, float *r, uint32_t n)
         }
     os_count = nos;
     job_n = n;
+    {   /* the second core's share of the 1x pipes: enough that both cores have about as much to do (a 2x pipe counts
+         * twice, the room about six) */
+        int n1 = np - nos, give = use2 ? (n1 - 2 * nos - 6) / 2 : 0, k = 0;
+        if (give < 0)
+            give = 0;
+        for (i = 0; i < KIST_MAX_PIPES; i++) {
+            pipes[i].core2 = 0;
+            if (pipes[i].active && !pipes[i].os && k < give && (i & 1)) {
+                pipes[i].core2 = 1;
+                k++;
+            }
+        }
+        for (i = 0; i < KIST_MAX_PIPES && k < give; i++)
+            if (pipes[i].active && !pipes[i].os && !pipes[i].core2) {
+                pipes[i].core2 = 1;
+                k++;
+            }
+    }
     memset(dry_l, 0, n * sizeof(float));
     memset(dry_r, 0, n * sizeof(float));
     handed = use2 && plat_cpu2_run(cpu2_job, 0);
-    for (i = 0; i < KIST_MAX_PIPES; i++)   /* the first core: every pipe at 1x */
-        if (pipes[i].active && !pipes[i].os)
+    for (i = 0; i < KIST_MAX_PIPES; i++)   /* the first core: its 1x pipes (all of them without the second) */
+        if (pipes[i].active && !pipes[i].os && (!handed || !pipes[i].core2))
             pipe_block(i, dry_l, dry_r, n);
     if (handed && plat_cpu2_wait() != 0) {
-        handed = 0;                        /* given up and the job dropped: the first core does it (below) */
+        handed = 0;                        /* given up and the job dropped: the first core does its pipes now */
         job_prev_n = 0;
+        for (i = 0; i < KIST_MAX_PIPES; i++)
+            if (pipes[i].active && pipes[i].core2) {
+                pipes[i].core2 = 0;
+                pipe_block(i, dry_l, dry_r, n);
+            }
     }
+    if (handed) {                          /* the second core's 1x pipes, checked like the rest of what it hands back */
+        if (finite_bounded(c2_l, n) && finite_bounded(c2_r, n)) {
+            for (s = 0; s < n; s++) {
+                dry_l[s] += c2_l[s];
+                dry_r[s] += c2_r[s];
+            }
+        } else {
+            for (i = 0; i < KIST_MAX_PIPES; i++)
+                if (pipes[i].active && pipes[i].core2)
+                    pipes[i].dead = 1;
+        }
+    }
+    for (i = 0; i < KIST_MAX_PIPES; i++)   /* the pipes that died this block, freed here (one core only) */
+        if (pipes[i].active && pipes[i].dead)
+            pipe_free(i);
     if (nos) {
         if (!handed)
             os_pipes(n);                   /* no second core: the 2x pipes that are left, here */
         if (!finite_bounded(dec_l, n) || !finite_bounded(dec_r, n)) {
             for (i = 0; i < KIST_MAX_PIPES; i++)
                 if (pipes[i].active && pipes[i].os)
-                    pipe_free(i);          /* their state is not to be trusted: they stop */
+                    pipe_free(i);          /* their state is not to be trusted: they stop (the first core frees them) */
             memset(dec_l, 0, n * sizeof(float));
             memset(dec_r, 0, n * sizeof(float));
         }
         for (s = 0; s < n; s++) {
             dry_l[s] += dec_l[s];
             dry_r[s] += dec_r[s];
+        }
+    }
+    {   /* the two chest sides: their DC out (once per side, not per pipe), then panned C side left, C# side right */
+        static float hx[2], hy[2];
+        const float a = 1.0f - FM_TWO_PI * 18.0f / FS, gn = 0.8367f, gf = 0.5477f;
+        for (s = 0; s < n; s++) {
+            float c = dry_l[s], d = dry_r[s], vc = c - hx[0] + a * hy[0], vd = d - hx[1] + a * hy[1];
+            hx[0] = c;
+            hy[0] = vc;
+            hx[1] = d;
+            hy[1] = vd;
+            dry_l[s] = gn * vc + gf * vd;
+            dry_r[s] = gf * vc + gn * vd;
         }
     }
     {   /* the dry sound and the blower's own noise, quiet, while it turns */
@@ -1039,6 +1117,7 @@ void organ_render(float *l, float *r, uint32_t n)
     } else {
         reverb_process(dry_l, dry_r, l, r, n);
     }
+    budget(plat_ticks24() - t0, n, np);
     meter.pipes = (uint32_t)np;
     if ((uint32_t)np > meter.pipes_peak)
         meter.pipes_peak = (uint32_t)np;
@@ -1062,13 +1141,17 @@ void organ_render(float *l, float *r, uint32_t n)
 }
 
 /* ------------------------------------------------------------------------------------- probe (tools) --- */
-/* one pipe alone at steady wind, for the calibration and the tests: returns its measured frequency */
+/* one pipe alone at steady wind, for the calibration and the tests: returns its measured frequency. Not in the
+ * firmware (its 32 KB buffer would not fit beside the organ) */
+#ifdef PLAT_HOST
 static float probe_buf[2u * 4096u];
 float organ_probe_run(int stop, float hz, float fs_mul, int use_cal, float seconds, float *out, uint32_t nout)
 {
     pipe_t p;
-    float fs = FS * fs_mul, per, lp1 = 0.0f, lp2 = 0.0f, prev = 0.0f, a, t_first = -1.0f, t_last = 0.0f;
-    uint32_t total = (uint32_t)(seconds * fs), from = total / 2u, s, len = 64, crossings = 0;
+    float fs = FS * fs_mul, lp1 = 0.0f, lp2 = 0.0f, prev = 0.0f, a, t_first = -1.0f, t_last = 0.0f, hx = 0.0f, hy = 0.0f;
+    float ahp = 1.0f - FM_TWO_PI * 18.0f / fs, bus[CR];
+    uint32_t total = (uint32_t)(seconds * fs), from = total / 2u, s, len = 64, crossings = 0, j;
+    frac_t qb, qj;
     memset(&p, 0, sizeof p);
     if (!pipe_shape(&p, stop, hz, fs, use_cal, 0))
         return 0.0f;
@@ -1080,30 +1163,36 @@ float organ_probe_run(int stop, float hz, float fs_mul, int use_cal, float secon
     p.bore = probe_buf;
     p.jet = probe_buf + len;
     p.mask = len - 1u;
-    p.bore_d = p.bore_t;
-    p.jet_d = p.jet_t;
     p.rng = 0x1234567u;
-    p.noise_base = STOP[stop].noise;
+    frac_set(&qb, p.bore_t);               /* the same code as the render, at steady wind */
+    qj.i = (uint32_t)(int32_t)p.jet_t;
+    qj.c0 = p.jet_t - (float)(int32_t)p.jet_t;
     a = one_pole(1.3f * hz, fs);
-    per = 0.0f;
-    for (s = 0; s < total; s++) {
-        float v = s < (uint32_t)(0.01f * fs) ? (float)s / (0.01f * fs) : 1.0f;
-        float y = pipe_radiate(&p, pipe_tick(&p, FLUE_BREATH * v, p.jet_t, p.noise_base));
-        if (out && s < nout)
-            out[s] = y * STOP[stop].gain;
-        lp1 += a * (y - lp1);              /* the fundamental, for the zero crossings */
-        lp2 += a * (lp1 - lp2);
-        if (s >= from && prev < 0.0f && lp2 >= 0.0f) {
-            float t = (float)s - lp2 / (lp2 - prev);
-            if (t_first < 0.0f)
-                t_first = t;
-            t_last = t;
-            crossings++;
+    for (s = 0; s < total; s += CR) {
+        float v = s < (uint32_t)(0.01f * fs) ? (float)s / (0.01f * fs) : 1.0f, bt = FLUE_BREATH * v;
+        memset(bus, 0, sizeof bus);
+        (p.c_mix > 0.0f ? pipe_run_chimney : pipe_run_plain)(&p, bus, CR, bt, bt * STOP[stop].noise * (1.0f / 2147483648.0f),
+                                                              &qb, &qj, STOP[stop].gain);
+        for (j = 0; j < CR; j++) {
+            float y = bus[j], h = y - hx + ahp * hy;
+            hx = y;
+            hy = h;
+            if (out && s + j < nout)
+                out[s + j] = h;
+            lp1 += a * (h - lp1);          /* the fundamental, for the zero crossings */
+            lp2 += a * (lp1 - lp2);
+            if (s + j >= from && prev < 0.0f && lp2 >= 0.0f) {
+                float t = (float)(s + j) - lp2 / (lp2 - prev);
+                if (t_first < 0.0f)
+                    t_first = t;
+                t_last = t;
+                crossings++;
+            }
+            prev = lp2;
         }
-        prev = lp2;
     }
     if (crossings < 3u)
         return 0.0f;
-    per = (t_last - t_first) / (float)(crossings - 1u);
-    return fs / per;
+    return fs / ((t_last - t_first) / (float)(crossings - 1u));
 }
+#endif
