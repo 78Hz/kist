@@ -27,6 +27,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Pillow (fm1-base renders its fonts with it)
+        run: python3 -m pip install --quiet pillow
       - name: JieLi toolchain and AC79 SDK
         # setup-fm1-toolchain's mirrors (its release assets, checked against their sha256), without its apt step
         env:
