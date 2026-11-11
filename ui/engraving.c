@@ -124,6 +124,9 @@ static void sheet(void)
  * or for a moment the last thing done. The type keeps the old scale on the organ's intervals (tools/gen_kist_fonts.py):
  * labels 12, captions and lists 16, values 18, titles 24. The page's own part and the knobs' part below it stand
  * about as 4 : 3. */
+#ifndef KIST_CLOCK
+#define KIST_CLOCK 1                           /* the Tuning page as a clock face (0: the Quinten-Circul) */
+#endif
 #define Y0 54                                  /* the page's own rows begin here */
 #define FOOT_Y 155                             /* the knobs: two rows of a label over its value */
 static void title(const char *t, const char *caption)
@@ -285,6 +288,64 @@ static void draw_tuning(void)
     } else {
         title(PAGE_TITLE[1], sys == TS_EQUAL ? "twelve equal semitones" : CIRCUL_NOTE[sys]);
     }
+#if KIST_CLOCK
+    {
+        /* the clock face: the octave round the dial, C at the top. The ticks are the equal division's steps (twelve
+         * equal semitones, or the division's own parts); the dotted hands are where this tuning puts each note,
+         * their offsets from the ticks shown three times over (1 cent = 0.9 degrees) */
+        static const char *const NOTE[12] = {"C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"};
+        const int32_t cx = 120, cy = 102, R = 32;
+        int n = sys == TS_EQUAL ? set.par.edo : 12, k, i;
+        float c[12];
+        if (sys == TS_EQUAL)
+            for (i = 0; i < 12; i++)
+                c[i] = 0.0f;
+        else
+            organ_temperament_cents(sys, set.par.root, c);
+        circle(cx, cy, R, P_INK, 0);
+        circle(cx, cy, R + 1, P_INK, 0);
+        if (!(sys == TS_EQUAL && n != 12))
+            circle(cx, cy, 2, P_INK, 0);
+        for (k = 0; k < n; k++) {           /* the equal steps, outside the ring */
+            float rad = (360.0f * (float)k / (float)n - 90.0f) * 0.01745329f, co = fm_cosf(rad), si = fm_sinf(rad);
+            int32_t len = n == 12 || k * 12 % n == 0 ? 5 : 3;
+            cv_line(cx + (int32_t)((float)(R + 2) * co + 0.5f), cy + (int32_t)((float)(R + 2) * si + 0.5f),
+                    cx + (int32_t)((float)(R + 1 + len) * co + 0.5f), cy + (int32_t)((float)(R + 1 + len) * si + 0.5f),
+                    k == 0 ? P_RED : P_INK);
+        }
+        for (i = 0; i < 12; i++) {          /* the notes' names round the outside, and their hands */
+            float base = 30.0f * (float)i, ang, rad, co, si;
+            int root = sys != TS_EQUAL && i == (int)set.par.root;
+            int32_t r;
+            rad = (base - 90.0f) * 0.01745329f;
+            text_c(cx + (int32_t)(43.0f * fm_cosf(rad) + 0.5f) + 1, cy + (int32_t)(43.0f * fm_sinf(rad) + 0.5f) - 7, &KF_SC,
+                   NOTE[i], root ? P_RED : P_INK);
+            if (sys == TS_EQUAL && n != 12)
+                continue;                   /* a division: its own steps, no hands */
+            ang = base + 3.0f * 0.3f * c[i];
+            rad = (ang - 90.0f) * 0.01745329f;
+            co = fm_cosf(rad);
+            si = fm_sinf(rad);
+            for (r = 5; r <= R - 4; r += 2)
+                cv_pset(cx + (int32_t)((float)r * co + 0.5f), cy + (int32_t)((float)r * si + 0.5f), root ? P_RED : P_INK);
+            cv_rect(cx + (int32_t)((float)(R - 4) * co + 0.5f) - 1, cy + (int32_t)((float)(R - 4) * si + 0.5f) - 1, 3, 3,
+                    root ? P_RED : P_INK);
+        }
+        if (sys == TS_EQUAL && n != 12) {
+            int_text(n, t);
+            text_c(cx, cy - 25, &KF_BIG, t, P_INK);
+            text_c(cx, cy + 10, &KF_SC, "parts", P_RED);
+            cv_text(14, Y0 + 68, &KF_SC, "ticks:", P_MID);
+            cv_text(14, Y0 + 80, &KF_SC, "the parts", P_MID);
+        } else {
+            cv_text(14, Y0, &KF_SC, "the notes", P_RED);
+            cv_text(14, Y0 + 68, &KF_SC, "ticks:", P_MID);
+            cv_text(14, Y0 + 80, &KF_SC, "equal", P_MID);
+            text_r(226, Y0 + 68, &KF_SC, "hands:", P_MID);
+            text_r(226, Y0 + 80, &KF_SC, "each cent x3", P_MID);
+        }
+    }
+#else
     if (sys == TS_EQUAL && set.par.edo != 12) {
         /* an equal division: the octave as an engraved scale of its parts */
         int n = set.par.edo, k;
@@ -360,6 +421,7 @@ static void draw_tuning(void)
             }
         }
     }
+#endif
     foot_rules();
     int_text(set.par.pitch_hz, t);
     text_cat(t, " Hz");
