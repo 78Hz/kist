@@ -15,12 +15,16 @@ ROOT = Path(__file__).resolve().parents[1]
 FONTS = ROOT / "assets" / "fonts"
 PAD = 2                                    # as fm1-base's gen_font.py: the bitmap starts PAD pixels left of the pen
 REMAP = {"^": "·", "{": "ö", "}": "¶", "~": "ß", "_": "ſ", "\\": "±", "`": "⅔"}
+# the sizes in the old printers' scale, on the organ's own intervals: 12 the labels, 16 a fourth above (the captions
+# and lists), 18 a fifth above (the values and the pipe names), 24 the octave (the titles), 36 a fifth over that
 FACES = [                                  # role, file, pixel size
-    ("TITLE", "UnifrakturMaguntia-Book.ttf", 22),
-    ("NAME", "IMFeENrm28P.ttf", 17),           # the pipe names: the smallest size on the screen
-    ("ITAL", "IMFeENit28P.ttf", 17),
-    ("SC", "IMFeENsc28P.ttf", 17),
-    ("BIG", "IMFeENrm28P.ttf", 30),
+    ("TITLE", "UnifrakturMaguntia-Book.ttf", 24),
+    ("NAME", "IMFeENrm28P.ttf", 18),           # values and the pipe names
+    ("BODY", "IMFeENrm28P.ttf", 16),           # lists
+    ("ITAL", "IMFeENit28P.ttf", 16),           # captions
+    ("VITAL", "IMFeENit28P.ttf", 18),          # a value in italic: the chosen one, or a long one
+    ("SC", "IMFeENsc28P.ttf", 12),             # labels
+    ("BIG", "IMFeENrm28P.ttf", 36),
 ]
 FIRST, LAST = 32, 126
 
