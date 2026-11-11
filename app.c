@@ -1082,9 +1082,12 @@ void app_frame(void)
     uint32_t now = plat_ms();
     input();
     speak();
-    if (now - ui.trace_t >= 100u) {      /* the reservoir's trace, 10 a second */
+    if (now / 100u != ui.trace_t / 100u) {   /* the reservoir's trace, 10 a second: every slot since the last */
+        uint32_t k = ui.trace_t / 100u, n = 0;
+        uint8_t v = (uint8_t)clamp((int32_t)(m->pressure * 100.0f), 0, 255);
+        while (k != now / 100u && n++ < 60u)
+            ui.trace[++k % 60u] = v;
         ui.trace_t = now;
-        ui.trace[(now / 100u) % 60u] = (uint8_t)clamp((int32_t)(m->pressure * 100.0f), 0, 255);
         if (ui.page == PG_WIND)
             ui.redraw = 1;
     }
