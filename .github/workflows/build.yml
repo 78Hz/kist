@@ -204,11 +204,11 @@ jobs:
           - **kist-$version.fwsc**: the firmware. Install it with FM-1 Manager, or
             \`python3 fm1-base/tools/fm1_install.py kist-$version.fwsc\`.
           - **FM-1 Manager**: macOS (Apple silicon / Intel), Windows, Linux. It installs any FM-1 firmware, puts
-            M-VAVE's back, and keeps backups; it comes with this KIST.
-          - **KIST-manual.pdf**: the player's manual. See [manager/](https://github.com/$GH_REPO/tree/$tag/manager).
+            M-VAVE's back, and keeps backups; it comes with this KIST. See [manager/](https://github.com/$GH_REPO/tree/$tag/manager).
+          - **KIST-manual.pdf**: the player's manual: the stops, the pages, the tuning, and installing.
 
-          Take a whole-flash backup before the first install (FM-1 Manager → Whole flash). Not yet played on a
-          real FM-1: install at your own risk, and report what you find.
+          Take a whole-flash backup before the first install (FM-1 Manager → Whole flash). Install at your own
+          risk, and report what you find.
           NOTES
           flags=()
           if [[ "$version" == *-* || "$version" == 0.* ]]; then flags=(--prerelease); fi
