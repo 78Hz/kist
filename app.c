@@ -160,6 +160,8 @@ void app_init(void)
     cpu2_started = plat_cpu2_set(1) == 0;   /* the 2x top pipes and the richer room, where the unit allows */
 }
 
+static uint8_t backup_hold;              /* a backup streaming: SAVE waits */
+
 /* ------------------------------------------------------------------------------------------- text --- */
 static void text_cat(char *d, const char *s)
 {
@@ -491,12 +493,12 @@ static void input(void)
             ui.redraw = 1;
             app_say(PAGE_NAME[ui.page], "");
         } else if (k == B_SAVE) {
-            int r = plat_store_save(OBJ_SETTINGS, &set, sizeof set);
+            int r = backup_hold ? -1 : plat_store_save(OBJ_SETTINGS, &set, sizeof set);
             if (r == 0) {
                 set_dirty = 0;
                 app_say("SAVED", "for power-on");
             } else {
-                app_say("NOT SAVED", r == -9 ? "flash unknown" : "store full");
+                app_say("NOT SAVED", r == -9 ? "flash unknown" : backup_hold ? "backup running" : "store full");
             }
         } else if (k == B_SEQ) {
             set.trem ^= 1u;
@@ -695,3 +697,16 @@ int app_expect(const char *what, int *got)
     return 1;
 }
 #endif
+
+/* backup and restore over USB (fm1-base device/backup.c): the setup SAVE stored, nothing else */
+int app_backup_playing(void) { return 0; }            /* a restore only swaps the setup: fine while playing */
+void app_backup_flush(void) {}                          /* the setup is saved by SAVE alone: a backup takes that */
+void app_backup_hold(int on) { backup_hold = (uint8_t)on; }
+void app_backup_restored(void)
+{
+    if (plat_store_load(OBJ_SETTINGS, &set, sizeof set) != (int)sizeof set || !settings_ok())
+        settings_defaults();
+    engine_all();
+    set_dirty = 0;
+    ui.redraw = 1;
+}

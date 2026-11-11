@@ -13,6 +13,15 @@
 /* the store: the setup (SAVE) and the panel calibration (the platform's) */
 enum { OBJ_SETTINGS, OBJ_PANEL, OBJ_NOBJ };
 #define APP_STORE_MAP {0xFC000u, 0xDC000u}
+/* backup over USB (fm1.toml backup = true): the setup alone; the panel's calibration stays the unit's */
+#define APP_BACKUP_OBJS {OBJ_SETTINGS}
+#define APP_BACKUP_MAGIC 0x4253494Bu            /* "KISB" */
+#define APP_BACKUP_VERSION 1u
+#define APP_BACKUP_WHAT "replaces the saved setup"
+int app_backup_playing(void);
+void app_backup_flush(void);
+void app_backup_hold(int on);
+void app_backup_restored(void);
 
 void app_init(void);
 void app_render(int32_t *lr, uint32_t n, uint32_t master_q12);
