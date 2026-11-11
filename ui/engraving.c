@@ -301,37 +301,64 @@ static void draw_tuning(void)
         text_c(cx, cy - 25, &KF_BIG, t, P_INK);
         text_c(cx, cy + 13, &KF_SC, "parts", P_RED);
     } else {
-        /* the circle of fifths, laid out as the old tables print it: three rows of four, each fifth a stroke whose
-         * weight is its tempering (pure: a hairline), the wolf red; the last row closes on C */
+        /* the Quinten-Circul: the twelve notes round the circle of fifths, each fifth an arc between its notes.
+         * The dotted ring is the pure fifth; a tempered fifth is drawn in towards the centre by how much it is
+         * narrowed (1.6 px a cent), so the comma's squashing shows where it was put; a fifth wider than pure bows
+         * out, in red: the wolf */
         static const int FIFTHS[12] = {0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5};
         static const char *const NOTE[12] = {"C", "G", "D", "A", "E", "B", "F#", "C#", "G#", "Eb", "Bb", "F"};
+        const int32_t cx = 120, cy = 102, R = 33;
         float c[12];
-        int i;
+        int i, k;
         organ_temperament_cents(sys, set.par.root, c);
-        cv_text(14, Y0, &KF_SC, "the fifths", P_RED);
-        text_r(226, Y0, &KF_SC, "the heavier, the narrower", P_MID);
+        circle(cx, cy, R, P_MID, 1);
         for (i = 0; i < 12; i++) {
             int a = FIFTHS[i], b = FIFTHS[(i + 1) % 12];
-            float size = 700.0f + c[b] - c[a], narrow = 701.955f - size;
-            int32_t w = narrow > 4.5f ? 3 : narrow > 2.5f ? 2 : 1, row = i / 4, col = i % 4;
-            int32_t nx = 30 + col * 52, y = Y0 + 16 + row * 26, x0, x1, nw = text_w(&KF_NAME, NOTE[i]);
-            uint16_t ink = narrow < -5.0f ? P_RED : P_INK;
-            if (narrow < -5.0f)
-                w = 3;
-            if (narrow > -0.3f && narrow < 0.3f)
-                w = 1;
-            text_c(nx, y, &KF_NAME, NOTE[i], a == (int)set.par.root ? P_RED : P_INK);
-            if (a == (int)set.par.root)
-                hline(nx - nw / 2, y + 20, nw, P_RED);
-            x0 = nx + nw / 2 + 3;
-            x1 = nx + 52 - text_w(&KF_NAME, NOTE[(i + 1) % 12]) / 2 - 3;
-            if (col == 3)
-                x1 = 226;                   /* on to the next row */
-            if (row == 2 && col == 3)
-                x1 = nx + 22;
-            cv_rect(x0, y + 11 - w / 2, x1 - x0, w, ink);
+            float narrow = 701.955f - (700.0f + c[b] - c[a]), sag = narrow * 1.6f;
+            uint16_t ink = narrow < -3.0f ? P_RED : P_INK;
+            int32_t px = 0, py = 0;
+            if (sag > 10.0f)
+                sag = 10.0f;
+            if (sag < -8.0f)
+                sag = -8.0f;
+            for (k = 0; k <= 16; k++) {
+                float u = (float)k / 16.0f, ang = (30.0f * ((float)i + u) - 90.0f) * 0.01745329f;
+                float r = (float)R - sag * fm_sinf(3.14159265f * u);
+                int32_t x = cx + (int32_t)(r * fm_cosf(ang) + 0.5f), y = cy + (int32_t)(r * fm_sinf(ang) + 0.5f);
+                int32_t x2 = cx + (int32_t)((r - 1.0f) * fm_cosf(ang) + 0.5f), y2 = cy + (int32_t)((r - 1.0f) * fm_sinf(ang) + 0.5f);
+                if (k) {
+                    cv_line(px, py, x, y, ink);
+                    cv_pset(x2, y2, ink);
+                }
+                px = x;
+                py = y;
+            }
         }
-        cv_text(30 + 3 * 52 + 25, Y0 + 16 + 2 * 26, &KF_NAME, "C", P_MID);
+        for (i = 0; i < 12; i++) {
+            float ang = (30.0f * (float)i - 90.0f) * 0.01745329f;
+            int32_t nx = cx + (int32_t)(43.0f * fm_cosf(ang) + 0.5f), ny = cy + (int32_t)(43.0f * fm_sinf(ang) + 0.5f);
+            int root = FIFTHS[i] == (int)set.par.root;
+            cv_rect(cx + (int32_t)((float)R * fm_cosf(ang) + 0.5f) - 1, cy + (int32_t)((float)R * fm_sinf(ang) + 0.5f) - 1, 3, 3,
+                    root ? P_RED : P_INK);
+            text_c(nx + 1, ny - 7, &KF_SC, NOTE[i], root ? P_RED : P_INK);
+        }
+        cv_text(14, Y0, &KF_SC, "the fifths", P_RED);
+        cv_text(14, Y0 + 68, &KF_SC, "dotted:", P_MID);
+        cv_text(14, Y0 + 80, &KF_SC, "pure", P_MID);
+        text_r(226, Y0 + 68, &KF_SC, "drawn in:", P_MID);
+        text_r(226, Y0 + 80, &KF_SC, "narrowed", P_MID);
+        {
+            float worst = 0.0f;
+            for (i = 0; i < 12; i++) {
+                float w = (700.0f + c[FIFTHS[(i + 1) % 12]] - c[FIFTHS[i]]) - 701.955f;
+                if (w > worst)
+                    worst = w;
+            }
+            if (worst > 3.0f) {
+                text_r(226, Y0, &KF_SC, "the wolf", P_RED);
+                text_r(226, Y0 + 12, &KF_SC, "bows out", P_RED);
+            }
+        }
     }
     foot_rules();
     int_text(set.par.pitch_hz, t);
