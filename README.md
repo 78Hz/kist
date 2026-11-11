@@ -80,7 +80,8 @@ The toolchain and SDK: `fm1-base/tools/get_toolchain.sh`, or the mirrors of
 
 First take a full flash backup with a recovery tool that supports your FM-1's flash chip. Then
 `python3 fm1-base/tools/fm1_install.py build/kist.fwsc`. Both FM-1 flash chips are recognised (the older Puya P25Q80,
-the newer UC25HQ80); on an unknown chip the organ plays but does not save. To go back: M-VAVE's firmware through
+the newer UC25HQ80); on an unknown chip the organ plays but does not save. SAVE writes the flash, which stops
+everything for a moment, the sound too: save between pieces. To go back: M-VAVE's firmware through
 fm1-base's installer, or felucca-bsp's `tools/fm1_rescue.sh` for an FM-1 that does not start.
 
 ## Not yet known
