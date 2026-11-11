@@ -66,7 +66,10 @@ first sign of trouble. The organ is built to play fully on one core; the System 
 ## The screen
 
 The pages are drawn as a Baroque engraving: ink and red on paper, a double-ruled border, Fraktur titles and
-Fell types (`ui/engraving.c`). The four knobs are indexed i–iv along the foot of every page. The faces are
+Fell types (`ui/engraving.c`), sized on the old printers' scale (labels 12 px, lists and captions 16, values 18,
+titles 24). The four knobs are a table at the foot of every page, i–iv, each a small red label over its value. The
+Tuning page is a clock face: the equal steps as ticks round the dial, each note a dotted hand, its offset from the
+tick drawn three times over. The faces are
 rendered into bitmap fonts by `tools/gen_kist_fonts.py` (into `ui/kist_fonts.h`) from:
 
 - UnifrakturMaguntia, SIL Open Font License 1.1 (`assets/fonts/OFL-UnifrakturMaguntia.txt`)
