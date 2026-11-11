@@ -30,11 +30,15 @@ jobs:
       - name: JieLi toolchain and AC79 SDK
         uses: DimmKirr/setup-fm1-toolchain@e94bbde88481a257226cc9a58f69fd496ba7f73d
       - name: Host simulator and its scripted test
+        env:
+          CC: gcc                     # the host's compiler: the toolchain's clang (on PATH) has no host headers
         run: |
           set -euo pipefail
           python3 fm1-base/tools/build.py . --host
           build/host/kist_host tests/host/basic.txt build/host
       - name: Engine tests (tuning, temperaments, render)
+        env:
+          CC: gcc
         run: |
           set -euo pipefail
           tools/build_tools.sh
