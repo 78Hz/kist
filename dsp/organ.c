@@ -586,7 +586,7 @@ static const struct {
     float size, damp_hz, er_gain, predelay_ms;
     uint8_t decay_ds, mix;
 } ROOMS[NROOMS] = {
-    {"Dry", 0.30f, 7000.0f, 0.35f, 2.0f, 4, 10},
+    {"Dry", 0.42f, 7000.0f, 0.22f, 2.0f, 4, 7},
     {"Chapel", 0.60f, 6000.0f, 0.60f, 6.0f, 16, 35},
     {"Village church", 0.90f, 5200.0f, 0.55f, 10.0f, 26, 35},
     {"Abbey nave", 1.25f, 4200.0f, 0.45f, 16.0f, 45, 40},

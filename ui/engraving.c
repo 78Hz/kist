@@ -208,7 +208,12 @@ static void foot_rules(void)
     vline(120, 154, 70, P_RULE);
 }
 
+#ifdef KIST_PLATE
+static const char *const PAGE_TITLE[NPAGES] = {"Con_ole", "Tuning", "The Plate", "The Drive", "The Motion", "The Wind",
+                                               "Intonation", "The Works"};
+#else
 static const char *const PAGE_TITLE[NPAGES] = {"Con_ole", "Tuning", "The Room", "The Wind", "Intonation", "The Works"};
+#endif
 static const char *const STOP_DE[NSTOPS] = {"Gedackt", "Rohrfl{te", "Principal", "Quinta"};
 static const char *const STOP_FUSS[NSTOPS] = {"8 Fu~", "4 Fu~", "2 Fu~", "2` Fu~"};
 
@@ -278,7 +283,13 @@ static void draw_console(void)
             hline(12, y + 19, 216, P_RULE);
     }
     foot_rules();
+#ifdef KIST_PLATE
+    plate_value_text(PV_DECAY, t);
+    dots_to_mid(t);
+    foot(0, "Plate", t);
+#else
     foot(0, "Room", organ_room_name(set.par.room));
+#endif
     int_text(set.par.mix, t);
     text_cat(t, " in 100");
     foot(1, "its share", t);
@@ -510,6 +521,154 @@ static void draw_room(void)
     foot(3, "Decay", t);
 }
 
+#ifdef KIST_PLATE
+/* a solid line (Bresenham) */
+static void line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t c)
+{
+    int32_t dx = x1 > x0 ? x1 - x0 : x0 - x1, dy = y1 > y0 ? y0 - y1 : y1 - y0, sx = x0 < x1 ? 1 : -1,
+            sy = y0 < y1 ? 1 : -1, err = dx + dy, n = (dx > -dy ? dx : -dy) + 1;
+    while (n-- > 0) {
+        int32_t e2 = 2 * err;
+        cv_pset(x0, y0, c);
+        if (e2 >= dy) {
+            err += dy;
+            x0 += sx;
+        }
+        if (e2 <= dx) {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+/* a spring: from (x0, y0) to (x1, y1), a straight end at each side and five coils between */
+static void spring(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t c)
+{
+    float dx = (float)(x1 - x0), dy = (float)(y1 - y0), len = fm_sqrtf(dx * dx + dy * dy), nx, ny;
+    int32_t px, py, i;
+    if (len < 4.0f) {
+        line(x0, y0, x1, y1, c);
+        return;
+    }
+    nx = -dy / len * 2.5f;
+    ny = dx / len * 2.5f;
+    px = x0 + (int32_t)(dx * 0.2f);
+    py = y0 + (int32_t)(dy * 0.2f);
+    line(x0, y0, px, py, c);
+    for (i = 1; i <= 10; i++) {
+        float u = 0.2f + 0.6f * (float)i / 10.0f, side = i == 10 ? 0.0f : (i & 1 ? 1.0f : -1.0f);
+        int32_t qx = x0 + (int32_t)(dx * u + nx * side), qy = y0 + (int32_t)(dy * u + ny * side);
+        line(px, py, qx, qy, c);
+        px = qx;
+        py = qy;
+    }
+    line(px, py, x1, y1, c);
+}
+
+/* the plate: a steel sheet hung by springs at its corners in its frame, drawn to its size (as it glides); the driver
+ * left of its middle, two pickups right; the damping's felt above it, nearer the more it damps */
+static void plate_drawing(void)
+{
+    const int32_t fx = 14, fy = Y0 + 2, fw = 138, fh = 88, cx = fx + fw / 2, cy = fy + fh / 2;
+    float sz = plate_size_now();
+    int32_t pw = (int32_t)(98.0f * sz / 1.3f), ph = (int32_t)(50.0f * sz / 1.3f), px = cx - pw / 2, py = cy - ph / 2, y;
+    int32_t gap = 2 + (int32_t)(12.0f * (float)(set.plate.damp_k10 - 10) / 90.0f), pad_w = pw * 3 / 5;
+    frame(fx, fy, fw, fh, P_INK);
+    for (y = py + 2; y < py + ph - 1; y += 3)   /* the steel, engraved */
+        hline(px + 2, y, pw - 3, P_RULE);
+    hline(px, py, pw, P_INK);
+    hline(px, py + ph - 1, pw, P_INK);
+    vline(px, py, ph, P_INK);
+    vline(px + pw - 1, py, ph, P_INK);
+    spring(fx + 4, fy + 4, px, py, P_INK);
+    spring(fx + fw - 5, fy + 4, px + pw - 1, py, P_INK);
+    spring(fx + 4, fy + fh - 5, px, py + ph - 1, P_INK);
+    spring(fx + fw - 5, fy + fh - 5, px + pw - 1, py + ph - 1, P_INK);
+    {   /* the damping's felt, on its arm from the frame's top */
+        int32_t dx = cx - pad_w / 2, dy = py - gap - 4;
+        if (dy < fy + 3)
+            dy = fy + 3;
+        cv_rect(dx, dy, pad_w, 3, P_MID);
+        vline(cx, fy + 1, dy - fy - 1, P_MID);
+    }
+    {   /* the driver and the pickups */
+        int32_t dx = px + pw / 4, ux = px + pw * 3 / 4;
+        circle(dx, cy, ph > 20 ? 5 : 3, P_RED, 0);
+        cv_pset(dx, cy, P_RED);
+        cv_rect(ux - 2, cy - ph / 4 - 2, 4, 4, P_INK);
+        cv_rect(ux - 2, cy + ph / 4 - 2, 4, 4, P_INK);
+        if (ph > 26) {
+            cv_text(ux + 5, cy - ph / 4 - 5, &KF_NOTE, "l", P_MID);
+            cv_text(ux + 5, cy + ph / 4 - 5, &KF_NOTE, "r", P_MID);
+        }
+    }
+}
+
+static void draw_plate(void)
+{
+    static const char *const CAP[3] = {"steel, hung in its frame", "what goes in", "how it moves"};
+    static const char *const LAB[3][4] = {{"Size", "Decay", "Damping", "Pre-delay"},
+                                          {"Bandwidth", "In diffusion", "Decay diff.", "Low cut"},
+                                          {"Rate", "Depth", "Width", "its share"}};
+    int pg = ui.page - PG_PLATE, k, i;
+    const int32_t x0 = 160, w = 66, base = Y0 + 78;
+    char t[24];
+    title(PAGE_TITLE[ui.page], caption(CAP[pg]));
+    plate_drawing();
+    if (pg == 0) {                         /* its dying: the decay over six seconds */
+        float rt = 0.1f * (float)set.plate.decay_ds;
+        cv_text(x0, Y0, &KF_SC, "its dying", P_RED);
+        for (i = 0; i < w; i++) {
+            float tt = 6.0f * (float)i / (float)w, v = 1.0f - tt / rt;
+            int32_t h = v > 0.0f ? (int32_t)(56.0f * v) : 0, y;
+            for (y = 0; y < h; y += 2)
+                cv_pset(x0 + i, base - y, P_INK);
+            if (h)
+                cv_pset(x0 + i, base - h, P_INK);
+        }
+        hline(x0, base + 1, w, P_INK);
+        cv_text(x0 - 2, base + 4, &KF_SC, "0", P_MID);
+        text_r(x0 + w + 2, base + 4, &KF_SC, "6 s", P_MID);
+    } else if (pg == 1) {                  /* what goes in: the low cut and the bandwidth, 20 Hz .. 11 kHz */
+        float lc = 10.0f * (float)set.plate.lowcut_h10, bw = 100.0f * (float)set.plate.bandwidth_k10;
+        int32_t last = -1;
+        cv_text(x0, Y0, &KF_SC, "what goes in", P_RED);
+        for (i = 0; i < w; i++) {
+            float f = 20.0f * fm_exp2f(9.1f * (float)i / (float)(w - 1)), g = 1.0f / fm_sqrtf(1.0f + (f / bw) * (f / bw));
+            int32_t y;
+            if (lc > 0.0f)
+                g *= (f / lc) / fm_sqrtf(1.0f + (f / lc) * (f / lc));
+            y = base - (int32_t)(52.0f * g);
+            if (last >= 0)
+                line(x0 + i - 1, last, x0 + i, y, P_INK);
+            last = y;
+        }
+        hline(x0, base + 1, w, P_INK);
+        cv_text(x0 - 2, base + 4, &KF_SC, "20", P_MID);
+        text_r(x0 + w + 2, base + 4, &KF_SC, "10k", P_MID);
+    } else {                               /* how it moves: two seconds of its slow wave */
+        float rate = 0.1f * (float)set.plate.rate_ds, amp = 22.0f * 0.01f * (float)set.plate.depth;
+        int32_t last = -1, mid = base - 28;
+        cv_text(x0, Y0, &KF_SC, "its motion", P_RED);
+        dotted(x0, mid, w, 3, P_RULE);
+        for (i = 0; i < w; i++) {
+            int32_t y = mid - (int32_t)(amp * fm_sinf(FM_TWO_PI * rate * 2.0f * (float)i / (float)w));
+            if (last >= 0)
+                line(x0 + i - 1, last, x0 + i, y, P_INK);
+            last = y;
+        }
+        hline(x0, base + 1, w, P_INK);
+        cv_text(x0 - 2, base + 4, &KF_SC, "0", P_MID);
+        text_r(x0 + w + 2, base + 4, &KF_SC, "2 s", P_MID);
+    }
+    foot_rules();
+    for (k = 0; k < 4; k++) {
+        plate_value_text(PAGE_PV[pg][k], t);
+        dots_to_mid(t);
+        foot(k, LAB[pg][k], t);
+    }
+}
+#endif
+
 static void draw_wind(void)
 {
     const organ_meter_t *m = organ_meter();
@@ -525,9 +684,9 @@ static void draw_wind(void)
         dots_to_mid(u);
         text_cat(t, u);
         text_cat(t, " ms");
-        title(PAGE_TITLE[3], t);
+        title(PAGE_TITLE[PG_WIND], t);
     } else {
-        title(PAGE_TITLE[3], caption(set.trem ? "the tremulant beating" : "the bellows"));
+        title(PAGE_TITLE[PG_WIND], caption(set.trem ? "the tremulant beating" : "the bellows"));
     }
     {   /* a wedge bellows, opened by the reservoir's pressure */
         int32_t p = clamp((int32_t)(m->pressure * 100.0f), 0, 110), rise = 6 + p * 22 / 100, y;
@@ -575,7 +734,7 @@ static void draw_voicing(void)
 {
     char t[40], u[16];
     int k, st = ui.voice_stop;
-    title(PAGE_TITLE[4], caption("strike a key to choose its pipe"));
+    title(PAGE_TITLE[PG_VOICING], caption("strike a key to choose its pipe"));
     {                                       /* the register being voiced, and where it sits among the four */
         int32_t x;
         t[0] = 0;
@@ -664,7 +823,7 @@ static void draw_system(void)
     text_cat(t, " of ");
     int_text((int32_t)m->pipe_cap, u);
     text_cat(t, u);
-    title(PAGE_TITLE[5], t);
+    title(PAGE_TITLE[PG_SYSTEM], t);
     ledger(Y0, "MIDI received", "by jack and USB", P_INK);
     note_text(set.par.split - 1, t);
     text_cat(t, " | ");
@@ -699,6 +858,16 @@ static void draw_system(void)
         text_cat(t, "none");
     }
     foot(2, "Transpose", t);
+#ifdef KIST_PLATE
+    if (set.par.blower_noise) {            /* the blower's noise: here in KIST-P (the room's page is the plate's) */
+        int_text(set.par.blower_noise, t);
+        text_cat(t, " of 10");
+    } else {
+        t[0] = 0;
+        text_cat(t, "silent");
+    }
+    foot(3, "Blower", t);
+#endif
 }
 
 static void draw_temperament(void)       /* the ALGORITHM pop-up, over the page */
@@ -744,7 +913,11 @@ static void draw(void)
             switch (ui.page) {
             case PG_CONSOLE: draw_console(); break;
             case PG_TUNING: draw_tuning(); break;
+#ifdef KIST_PLATE
+            case PG_PLATE: case PG_DRIVE: case PG_MOTION: draw_plate(); break;
+#else
             case PG_ROOM: draw_room(); break;
+#endif
             case PG_WIND: draw_wind(); break;
             case PG_VOICING: draw_voicing(); break;
             default: draw_system(); break;

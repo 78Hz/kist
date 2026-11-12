@@ -3,7 +3,11 @@
 #include <stdint.h>
 #include "plat.h"
 
+#ifdef KIST_PLATE
+#define APP_NAME "KIST-P"
+#else
 #define APP_NAME "KIST"
+#endif
 #define APP_SPLASH_RGB RGB(240, 180, 76)
 #define APP_BLOCK 256u                   /* frames per audio block: 5.8 ms at 44.1 kHz */
 #define APP_TOUCH                        /* velocity from the FM-1's own keys (lib/touch.h) */
@@ -15,7 +19,11 @@ enum { OBJ_SETTINGS, OBJ_PANEL, OBJ_NOBJ };
 #define APP_STORE_MAP {0xFC000u, 0xDC000u}
 /* backup over USB (fm1.toml backup = true): the setup alone; the panel's calibration stays the unit's */
 #define APP_BACKUP_OBJS {OBJ_SETTINGS}
+#ifdef KIST_PLATE
+#define APP_BACKUP_MAGIC 0x4250494Bu            /* "KIPB" */
+#else
 #define APP_BACKUP_MAGIC 0x4253494Bu            /* "KISB" */
+#endif
 #define APP_BACKUP_VERSION 1u
 #define APP_BACKUP_WHAT "replaces the saved setup"
 int app_backup_playing(void);

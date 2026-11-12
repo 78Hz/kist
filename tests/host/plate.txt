@@ -1,0 +1,62 @@
+# KIST-P in the host simulator:  python3 fm1-base/tools/build.py kist-p --host
+#   kist-p/build/host/kist-p_host tests/host/plate.txt kist-p/build/host
+wait 800
+shot console.png
+expect page 0
+expect plate_decay 25
+# the Console's first knob: the plate's decay
+turn K1 5
+expect plate_decay 30
+# THE PLATE: page iii. Its size glides; its damping, pre-delay
+turn SELECT 2
+expect page 2
+wait 1500
+shot plate.png
+turn K1 -40
+expect plate_size 60
+wait 1500
+shot plate_small.png
+turn K1 70
+expect plate_size 130
+turn K3 -30
+turn K4 25
+wait 3500
+shot plate_large_damped.png
+# THE DRIVE: bandwidth, diffusions, the low cut
+turn SELECT 1
+expect page 3
+turn K1 -40
+turn K4 12
+expect plate_lowcut 20
+wait 1500
+shot drive.png
+# THE MOTION: rate, depth, width, and the mix (PRESETS too)
+turn SELECT 1
+expect page 4
+turn K1 8
+turn K2 30
+turn K3 -40
+turn PRESET 10
+expect mix 40
+wait 1500
+shot motion.png
+# a chord into the plate
+key 7 down 100
+key 11 down 100
+key 14 down 100
+wait 600
+expect notes 3
+key 7 up
+key 11 up
+key 14 up
+wait 1200
+expect notes 0
+# the blower's noise: on THE WORKS page's fourth knob
+turn SELECT 3
+expect page 7
+turn K4 2
+expect blower_noise 5
+shot system.png
+tap SAVE
+expect dirty 0
+expect store_writes 1

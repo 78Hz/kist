@@ -1,10 +1,10 @@
-/* KIST — the room: early reflections, input diffusion and an 8-line feedback delay network with slow modulation.
- * Algorithmic only. The "rich" mode (the second core's) adds more early reflections, two more diffusers and
- * modulation on four lines instead of two; both modes share the same buffers. */
+/* KIST — the room: velvet-noise early reflections, input diffusion and a 16-line feedback delay network, every line
+ * wandering slowly and absorbing for its own length; at half the rate, its lines 16-bit floating point (see
+ * reverb.c). Algorithmic only. "rich" is kept for the engine's sake and no longer changes the room. */
 #pragma once
 #include <stdint.h>
 
-#define RV_LINES 8
+#define RV_LINES 16
 
 typedef struct {
     float size, rt60, damp_hz, er_gain, predelay_ms, mix;

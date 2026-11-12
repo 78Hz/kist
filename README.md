@@ -15,6 +15,9 @@ workshop: one manual, four wooden stops, every pipe computed live as a digital w
 Each stop is split bass | treble at c' (adjustable), so seven stop halves; 192 pipes in all, 12 notes, up to 48
 pipes at once.
 
+Two firmwares come from this repository: **KIST**, the organ in a room, and **[KIST-P](#kist-p)**, the same organ
+through a plate reverb you can play with.
+
 Built on [fm1-base](https://github.com/charlesvestal/fm1-base) (felucca-bsp underneath, MPL-2.0, no closed code).
 
 ## Playing it
@@ -56,10 +59,44 @@ every reference tested from A300 to A500.99, rms under 0.15 cents. Above 1.5 kHz
 second core (within 0.12 cents); without the second core they stay within 1.2 cents. The default pipe drift
 (+-1.5 cents, VOICING) is on top of that, on purpose: a real organ is never dead in tune.
 
+## The room
+
+KIST's room is algorithmic: velvet-noise early reflections, four diffusers, then a feedback delay network of 16
+lines (31 to 88 ms, scaled by the room), each with its own allpass, a slow wander of its length, and a filter that
+absorbs for its own length so every line dies at the room's rate: the treble sooner, as in stone. It runs at
+half the rate (22 kHz, through halfband filters) and keeps its lines as 16-bit floating point, so the largest
+room (the Abbey nave, 4.7 s in the bass) fits in the memory. The five rooms: Dry, Chapel, Village church, Abbey nave, Concert hall.
+
+Before 0.3 the room's lines were ten times too short (4 to 10 ms, a unit error): that was the metallic, boxy ring.
+
+## KIST-P
+
+![KIST-P's plate pages](docs/img/screens-p.png)
+
+KIST with the room taken out and a plate put in: a Dattorro plate (the tank of the Lexicon-style plates), at half
+the rate, its lines 16-bit floating point. Everything else is KIST: the stops, the tuning, the wind, the voicing.
+Its saved setup is its own (KIST and KIST-P don't read each other's).
+
+The Room page becomes three pages, each with a drawing of the plate in its frame (the springs, the felt damper,
+the driver and the pickups) that follows the settings, and under it a curve: **The Plate** the decay, **The Drive**
+the frequency response, **The Motion** the wander.
+
+| Page | K1 | K2 | K3 | K4 |
+|---|---|---|---|---|
+| 3 Plate | size (30..130 %) | decay (0.2..12 s) | damping (1..10 kHz) | predelay (0..100 ms) |
+| 4 Drive | bandwidth (1..10 kHz, into the plate) | input diffusion | decay diffusion | low cut (off..500 Hz) |
+| 5 Motion | rate (0.1..3 Hz) | depth | width | mix |
+
+The size glides, 30 % a second, bending the tail's pitch as it goes; the decay time holds while it glides. On the
+Console K1 is the decay; PRESETS is the mix; the blower noise moves to the System page (K4). Wind & touch,
+Voicing and System are pages 6..8.
+
+Install `kist-p-X.Y.fwsc` from the same release, as KIST (see *Installing*).
+
 ## The second core
 
 Started at power-on. When it runs it takes the pipes above 1.5 kHz at twice the rate, part of the ordinary pipes,
-and the richer room (one block, 5.8 ms, later). On some FM-1s it misreads shared memory now and then: whatever it
+and the room or the plate (one block, 5.8 ms, later). On some FM-1s it misreads shared memory now and then: whatever it
 hands back is checked before it reaches the speakers, and fm1-base retires it for good (until power-off) at the
 first sign of trouble. The organ is built to play fully on one core; the System page shows the core's state.
 
@@ -87,6 +124,11 @@ rendered into bitmap fonts by `tools/gen_kist_fonts.py` (into `ui/kist_fonts.h`)
     build/calibrate > dsp/calib_table.h             # after any change to a stop's model constants
 
     JIELI_TOOLCHAIN=... AC79_SDK=... python3 fm1-base/tools/build.py .   # the firmware: build/kist.fwsc
+
+    python3 fm1-base/tools/build.py kist-p --host   # KIST-P: kist-p/ has its own fm1.toml, the code is shared
+    kist-p/build/host/kist-p_host tests/host/plate.txt kist-p/build/host
+    JIELI_TOOLCHAIN=... AC79_SDK=... python3 fm1-base/tools/build.py kist-p      # kist-p/build/kist-p.fwsc
+    build/engine_test_p                             # the engine with the plate
 
 The toolchain and SDK: `fm1-base/tools/get_toolchain.sh`, or the mirrors of
 [setup-fm1-toolchain](https://github.com/DimmKirr/setup-fm1-toolchain)'s releases.
@@ -116,7 +158,9 @@ firmware back*, or felucca-bsp's `tools/fm1_rescue.sh`.
 ## Releases
 
 A tag `vX.Y`, or running the Build workflow by hand with a version, builds everything on GitHub (`.github/workflows/build.yml`): the release firmware
-(`kist-X.Y.fwsc`, identity FM-1_57XXYY00, and `firmware.json`), the tests, and FM-1 Manager for each platform.
+(`kist-X.Y.fwsc`, identity FM-1_57XXYY00, and `firmware.json`; `kist-p-X.Y.fwsc`, identity FM-1_59XXYY00, and
+`kist-p-firmware.json`), the tests, and FM-1 Manager for each platform. The repository's own `firmware.json` (what
+the firmware hubs read) describes KIST.
 Every push to main builds and tests the firmware the same way.
 
 ## Licence
@@ -130,5 +174,8 @@ under the SIL Open Font License 1.1 (see *The screen*).
   firmware's code; the cycles each takes on the FM-1 are not measured. The render times itself every block and
   allows fewer pipes if it runs long (over 70 % of its time), closing the least important ones over 85 %: the
   System page shows the load and the pipes allowed. Run a full chord with every stop on the device to find out.
+- **What the room and the plate cost on the device.** The room is about 1400 instructions a sample, the plate
+  850 (the old room was 440); they run on the second core when it is there. Read the load on the System page with
+  a 12-note chord, every stop drawn. If it is too high, the room can drop to 12 or 8 lines.
 - **The sound on the FM-1's own speaker and outputs**: heard so far only as renders on a computer.
 - The wood pipes' voicing is a first pass, set from spectra and attack times; it wants ears.

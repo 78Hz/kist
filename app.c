@@ -4,11 +4,22 @@
  * Quint, SEQ the tremulant, PLAY the blower, REC cancels every stop (again: back), SAVE keeps the setup for the
  * next power-on, HOME the Console. SELECT turns the pages, PRESETS the room's mix, ALGORITHM the temperament
  * (from any page), K1..K4 what the page's footer says. OCT- / OCT+ move the FM-1's own keys; both: back to 0.
- * Part of the unity build (device/unity.c, host/plat_host.c), after the platform: gfx.c and announce.c are in scope. */
+ * Part of the unity build (device/unity.c, host/plat_host.c), after the platform: gfx.c and announce.c are in scope.
+ *
+ * KIST-P (kist-p/, KIST_PLATE): the same organ with a plate in place of the room. Its three pages THE PLATE, THE
+ * DRIVE and THE MOTION take the room's place (K1..K4 their parameters, dsp/plate.h); PRESETS the plate's mix; the
+ * CONSOLE's first knob its decay; the blower's noise moves to the WORKS page's fourth knob. */
 #include "fastmath.h"
 #include "organ.h"
+#ifdef KIST_PLATE
+#include "plate.h"
+#endif
 
+#ifdef KIST_PLATE
+#define SET_MAGIC 0x4B495031u            /* "KIP1" */
+#else
 #define SET_MAGIC 0x4B495331u            /* "KIS1" */
+#endif
 #define SET_VERSION 1u
 typedef struct {
     uint32_t magic;
@@ -21,12 +32,20 @@ typedef struct {
     int8_t midi_transpose;               /* -12..+12 semitones */
     int8_t octave;                       /* the FM-1's keys: -2..+1 */
     uint8_t rsv[3];
+#ifdef KIST_PLATE
+    plate_params_t plate;
+#endif
 } settings_t;
 static settings_t set;
 static uint8_t set_dirty;
 
+#ifdef KIST_PLATE
+enum { PG_CONSOLE, PG_TUNING, PG_PLATE, PG_DRIVE, PG_MOTION, PG_WIND, PG_VOICING, PG_SYSTEM, NPAGES };
+static const char *const PAGE_NAME[NPAGES] = {"CONSOLE", "TUNING", "PLATE", "DRIVE", "MOTION", "WIND & TOUCH", "VOICING", "SYSTEM"};
+#else
 enum { PG_CONSOLE, PG_TUNING, PG_ROOM, PG_WIND, PG_VOICING, PG_SYSTEM, NPAGES };
 static const char *const PAGE_NAME[NPAGES] = {"CONSOLE", "TUNING", "ROOM", "WIND & TOUCH", "VOICING", "SYSTEM"};
+#endif
 static const char *const STOP_SHORT[NSTOPS] = {"GED 8'", "ROHR 4'", "PRIN 2'", "QUINT"};
 static const char *const SYS_SHORT[NTS] = {"EDO", "WERCKM. III", "1/4-COMMA", "KIRNB. III", "VALLOTTI"};
 static const char *const PC_NAME[12] = {"C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"};
@@ -43,6 +62,9 @@ static void engine_all(void)
     organ_set_voicing(&set.voi);
     organ_set_stops(set.halves);
     organ_set_tremulant(set.trem);
+#ifdef KIST_PLATE
+    plate_set(&set.plate);
+#endif
 }
 
 static volatile uint32_t midi_count;
@@ -125,6 +147,10 @@ static void settings_defaults(void)
         set.voi.drift_dc[s] = 15;
     }
     set.halves = (uint8_t)(HALF_BIT(ST_GEDACKT, 0) | HALF_BIT(ST_GEDACKT, 1));
+#ifdef KIST_PLATE
+    plate_defaults(&set.plate);
+    set.par.mix = 30;
+#endif
 }
 
 static int settings_ok(void)
@@ -136,7 +162,11 @@ static int settings_ok(void)
            p->pressure <= 10 && p->steadiness <= 2 && p->blower_noise <= 10 && p->trem_speed >= 30 &&
            p->trem_speed <= 80 && p->trem_depth <= 2 && p->room < NROOMS && p->mix <= 100 && p->distance >= 1 &&
            p->distance <= 20 && p->decay_ds >= 3 && p->decay_ds <= 80 && set.midi_ch <= 16 &&
-           set.midi_transpose >= -12 && set.midi_transpose <= 12 && set.octave >= -2 && set.octave <= 1;
+           set.midi_transpose >= -12 && set.midi_transpose <= 12 && set.octave >= -2 && set.octave <= 1
+#ifdef KIST_PLATE
+           && plate_params_ok(&set.plate)
+#endif
+        ;
 }
 
 static uint32_t read_flash_id(void)
@@ -338,13 +368,74 @@ static void room_turn(int32_t e)
     app_say("ROOM", organ_room_name(r));
 }
 
+#ifdef KIST_PLATE
+/* the plate's parameters: each its field, range, step a detent, and how it reads */
+enum { PV_SIZE, PV_DECAY, PV_DAMP, PV_PRE, PV_BW, PV_INDIFF, PV_DECDIFF, PV_LOWCUT, PV_RATE, PV_DEPTH, PV_WIDTH, PV_MIX, NPV };
+static uint8_t *plate_field(int v)
+{
+    plate_params_t *q = &set.plate;
+    switch (v) {
+    case PV_SIZE: return &q->size_pc;
+    case PV_DECAY: return &q->decay_ds;
+    case PV_DAMP: return &q->damp_k10;
+    case PV_PRE: return &q->predelay_ms;
+    case PV_BW: return &q->bandwidth_k10;
+    case PV_INDIFF: return &q->in_diff;
+    case PV_DECDIFF: return &q->dec_diff;
+    case PV_LOWCUT: return &q->lowcut_h10;
+    case PV_RATE: return &q->rate_ds;
+    case PV_DEPTH: return &q->depth;
+    case PV_WIDTH: return &q->width;
+    default: return &set.par.mix;
+    }
+}
+static const uint8_t PV_LO[NPV] = {30, 2, 10, 0, 10, 0, 0, 0, 1, 0, 0, 0};
+static const uint8_t PV_HI[NPV] = {130, 120, 100, 100, 100, 100, 100, 50, 30, 100, 100, 100};
+static const char *const PV_NAME[NPV] = {"SIZE", "DECAY", "DAMPING", "PRE-DELAY", "BANDWIDTH", "INPUT DIFFUSION",
+                                         "DECAY DIFFUSION", "LOW CUT", "RATE", "DEPTH", "WIDTH", "PLATE MIX"};
+static void plate_value_text(int v, char *t)     /* as the footer and the voice give it: "2.5 s", "6.0 kHz", "off" */
+{
+    uint8_t x = *plate_field(v);
+    t[0] = 0;
+    switch (v) {
+    case PV_DECAY: dec_text(x, t); text_cat(t, " s"); break;
+    case PV_DAMP: case PV_BW: dec_text(x, t); text_cat(t, " kHz"); break;
+    case PV_PRE: int_text(x, t); text_cat(t, " ms"); break;
+    case PV_LOWCUT: if (!x) text_cat(t, "off"); else { int_text(10 * x, t); text_cat(t, " Hz"); } break;
+    case PV_RATE: dec_text(x, t); text_cat(t, " Hz"); break;
+    default: int_text(x, t); text_cat(t, " %"); break;
+    }
+}
+static void plate_turn(int v, int32_t e)
+{
+    uint8_t *f = plate_field(v);
+    char t[24];
+    *f = (uint8_t)clamp((int32_t)*f + e, PV_LO[v], PV_HI[v]);
+    if (v == PV_MIX)
+        params_changed();
+    else {
+        plate_set(&set.plate);
+        changed();
+    }
+    plate_value_text(v, t);
+    app_say(PV_NAME[v], t);
+}
+/* the plate's pages' knobs: THE PLATE, THE DRIVE, THE MOTION */
+static const uint8_t PAGE_PV[3][4] = {{PV_SIZE, PV_DECAY, PV_DAMP, PV_PRE}, {PV_BW, PV_INDIFF, PV_DECDIFF, PV_LOWCUT},
+                                      {PV_RATE, PV_DEPTH, PV_WIDTH, PV_MIX}};
+#endif
+
 static void knob(int k, int32_t e)
 {
     organ_params_t *p = &set.par;
     switch (ui.page) {
     case PG_CONSOLE:
         if (k == 0)
+#ifdef KIST_PLATE
+            plate_turn(PV_DECAY, e);
+#else
             room_turn(e);
+#endif
         else if (k == 1) {
             p->mix = (uint8_t)clamp((int32_t)p->mix + e, 0, 100);
             params_changed();
@@ -370,6 +461,13 @@ static void knob(int k, int32_t e)
             params_changed();
         }
         break;
+#ifdef KIST_PLATE
+    case PG_PLATE:
+    case PG_DRIVE:
+    case PG_MOTION:
+        plate_turn(PAGE_PV[ui.page - PG_PLATE][k], e);
+        break;
+#else
     case PG_ROOM:
         if (k == 0)
             room_turn(e);
@@ -382,6 +480,7 @@ static void knob(int k, int32_t e)
         if (k)
             params_changed();
         break;
+#endif
     case PG_WIND:
         if (k == 0)
             p->pressure = (int8_t)clamp((int32_t)p->pressure + e, -10, 10);
@@ -420,6 +519,12 @@ static void knob(int k, int32_t e)
             organ_set_stops(set.halves);
         } else if (k == 2)
             set.midi_transpose = (int8_t)clamp((int32_t)set.midi_transpose + e, -12, 12);
+#ifdef KIST_PLATE
+        else {                           /* the blower's noise lives here in KIST-P (the room's page is the plate's) */
+            p->blower_noise = (uint8_t)clamp((int32_t)p->blower_noise + e, 0, 10);
+            organ_set_params(p);
+        }
+#endif
         changed();
         break;
     }
@@ -530,12 +635,16 @@ static void input(void)
             ui.redraw = 1;
             app_say(PAGE_NAME[ui.page], "");
         } else if (k == EN_PRESET) {
+#ifdef KIST_PLATE
+            plate_turn(PV_MIX, e);
+#else
             char t[8];
             set.par.mix = (uint8_t)clamp((int32_t)set.par.mix + e, 0, 100);
             params_changed();
             int_text(set.par.mix, t);
             text_cat(t, "%");
             app_say("ROOM MIX", t);
+#endif
         } else if (k == EN_ALGO) {
             system_turn(e);
             ui.overlay_until = now + 2000u;
@@ -654,6 +763,16 @@ void app_frame(void)
         last_msg = now;
         ui.redraw = 1;
     }
+#ifdef KIST_PLATE
+    {   /* the plate drawn as it grows or shrinks */
+        static float last_size;
+        float sz = plate_size_now();
+        if ((ui.page >= PG_PLATE && ui.page <= PG_MOTION) && (sz > last_size + 0.004f || sz < last_size - 0.004f)) {
+            last_size = sz;
+            ui.redraw = 1;
+        }
+    }
+#endif
     if (ui.redraw) {
         ui.redraw = 0;
         draw();
@@ -676,6 +795,16 @@ int app_expect(const char *what, int *got)
         *got = set.par.edo;
     else if (!strcmp(what, "room"))
         *got = set.par.room;
+#ifdef KIST_PLATE
+    else if (!strcmp(what, "plate_size"))
+        *got = set.plate.size_pc;
+    else if (!strcmp(what, "plate_decay"))
+        *got = set.plate.decay_ds;
+    else if (!strcmp(what, "plate_lowcut"))
+        *got = set.plate.lowcut_h10;
+    else if (!strcmp(what, "blower_noise"))
+        *got = set.par.blower_noise;
+#endif
     else if (!strcmp(what, "mix"))
         *got = set.par.mix;
     else if (!strcmp(what, "trem"))

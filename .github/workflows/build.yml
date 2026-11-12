@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
-# KIST: every push builds and tests the firmware; a tag vX.Y, or a run by hand with a version, also builds FM-1 Manager for each platform and makes
-# the release (the release firmware kist-X.Y.fwsc, firmware.json, the Manager's apps).
+# KIST and KIST-P (kist-p/): every push builds and tests both firmwares; a tag vX.Y, or a run by hand with a version, also builds FM-1 Manager for each platform and makes
+# the release (kist-X.Y.fwsc, kist-p-X.Y.fwsc, their firmware.json, the Manager's apps).
 name: Build
 
 on:
@@ -69,6 +69,8 @@ jobs:
           set -euo pipefail
           python3 fm1-base/tools/build.py . --host
           build/host/kist_host tests/host/basic.txt build/host
+          python3 fm1-base/tools/build.py kist-p --host
+          kist-p/build/host/kist-p_host tests/host/plate.txt kist-p/build/host
       - name: Engine tests (tuning, temperaments, render)
         env:
           CC: gcc
@@ -76,6 +78,7 @@ jobs:
           set -euo pipefail
           tools/build_tools.sh
           build/engine_test
+          build/engine_test_p
       - name: Firmware
         run: |
           set -euo pipefail
@@ -83,14 +86,17 @@ jobs:
           if [[ -n "$VERSION" ]]; then
             version=${VERSION#v}
             python3 fm1-base/tools/build.py . --release "$version"
-            cp "build/kist-$version.fwsc" out/
+            python3 fm1-base/tools/build.py kist-p --release "$version"
+            cp "build/kist-$version.fwsc" "kist-p/build/kist-p-$version.fwsc" out/
           else
             python3 fm1-base/tools/build.py .
-            cp build/kist.fwsc out/
+            python3 fm1-base/tools/build.py kist-p
+            cp build/kist.fwsc kist-p/build/kist-p.fwsc out/
           fi
           cp build/firmware.json out/
+          cp kist-p/build/firmware.json out/kist-p-firmware.json
           cp build/host/*.png out/ 2>/dev/null || true
-          (cd out && sha256sum *.fwsc firmware.json > SHA256SUMS)
+          (cd out && sha256sum *.fwsc *firmware.json > SHA256SUMS)
           cat out/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
@@ -193,19 +199,21 @@ jobs:
           version=${tag#v}
           [[ "$version" =~ ^[0-9]{1,2}\.[0-9]{1,2}(\.[0-9]{1,2})?(-[A-Za-z0-9]+)?$ ]] || { echo "bad version $version"; exit 1; }
           mkdir files
-          cp art/firmware/*.fwsc art/firmware/firmware.json art/firmware/SHA256SUMS files/
+          cp art/firmware/*.fwsc art/firmware/*firmware.json art/firmware/SHA256SUMS files/
           cp art/firmware/console.png files/kist-screen.png 2>/dev/null || true
           find art -path 'art/manager-*' -type f -exec cp {} files/ \;
-          cp src/docs/manual/KIST-manual.pdf files/ 2>/dev/null || true
+          cp src/docs/manual/KIST-manual.pdf src/docs/manual/KIST-P-manual.pdf files/ 2>/dev/null || true
           ls -la files
           cat > notes.md <<NOTES
           KIST $version for the M-VAVE FM-1, and FM-1 Manager.
 
-          - **kist-$version.fwsc**: the firmware. Install it with FM-1 Manager, or
+          - **kist-$version.fwsc**: KIST, the organ in a room. Install it with FM-1 Manager, or
             \`python3 fm1-base/tools/fm1_install.py kist-$version.fwsc\`.
+          - **kist-p-$version.fwsc**: KIST-P, the same organ through a plate reverb with every control on its
+            own pages. Installed the same way; it keeps its own saved setup.
           - **FM-1 Manager**: macOS (Apple silicon / Intel), Windows, Linux. It installs any FM-1 firmware, puts
             M-VAVE's back, and keeps backups; it comes with this KIST. See [manager/](https://github.com/$GH_REPO/tree/$tag/manager).
-          - **KIST-manual.pdf**: the player's manual: the stops, the pages, the tuning, and installing.
+          - **KIST-manual.pdf**, **KIST-P-manual.pdf**: the players' manuals: the stops, the pages, the tuning, and installing.
 
           Take a whole-flash backup before the first install (FM-1 Manager → Whole flash). Install at your own
           risk, and report what you find.

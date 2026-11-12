@@ -1,0 +1,21 @@
+# KIST-P's own screenshots for its manual, each page at rest (the rest come from screens.txt, as KIST's):
+#   kist-p/build/host/kist-p_host docs/manual/screens-p.txt build/manual-p
+#   (then KIST_P=1 docs/manual/make_manual.py build/manual docs/manual/KIST-P-manual.pdf build/manual-p)
+wait 800
+tap ENV
+tap LFO
+tap ARP
+wait 3200
+shot console.png
+turn SELECT 2
+wait 3200
+shot plate.png
+turn SELECT 1
+wait 3200
+shot drive.png
+turn SELECT 1
+wait 3200
+shot motion.png
+turn SELECT 3
+wait 3200
+shot system.png

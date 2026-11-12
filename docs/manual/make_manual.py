@@ -8,7 +8,12 @@ UnifrakturMaguntia (both SIL OFL 1.1, assets/fonts).
     python3 docs/manual/make_manual.py SCREENSHOT_DIR [OUT.pdf]
 
 SCREENSHOT_DIR holds the host simulator's shots (tests/host/basic.txt, and the temperament shots of
-docs/manual/temperaments.txt), each 240 x 240; they are enlarged here by whole pixels."""
+docs/manual/temperaments.txt), each 240 x 240; they are enlarged here by whole pixels.
+
+KIST-P's manual (docs/manual/KIST-P-manual.pdf): KIST_P=1, and a third argument, the directory of KIST-P's own shots
+(docs/manual/screens-p.txt), which stand in for KIST's where both have one.
+
+    KIST_P=1 python3 docs/manual/make_manual.py build/manual docs/manual/KIST-P-manual.pdf build/manual-p"""
 import os
 import sys
 from pathlib import Path
@@ -27,7 +32,10 @@ from reportlab.platypus import (BaseDocTemplate, CondPageBreak, Frame, Image as 
 ROOT = Path(__file__).resolve().parents[2]
 FONTS = ROOT / "assets" / "fonts"
 SHOTS = Path(sys.argv[1] if len(sys.argv) > 1 else "build/host")
-OUT = Path(sys.argv[2] if len(sys.argv) > 2 else ROOT / "docs" / "manual" / "KIST-manual.pdf")
+PLATE = os.environ.get("KIST_P") == "1"
+NAME = "KIST-P" if PLATE else "KIST"
+OUT = Path(sys.argv[2] if len(sys.argv) > 2 else ROOT / "docs" / "manual" / f"{NAME}-manual.pdf")
+SHOTS_P = Path(sys.argv[3]) if len(sys.argv) > 3 else None   # KIST-P's own shots, before KIST's
 TMP = Path("/tmp/kist-manual-img")
 
 pdfmetrics.registerFont(TTFont("Fell", str(FONTS / "IMFeENrm28P.ttf")))
@@ -68,7 +76,7 @@ def page_deco(canvas, doc, recto):
     if n > 1:
         canvas.setFont("Fell-SC", 8.5)
         canvas.setFillColor(MID)
-        head = "KIST  ·  a chamber organ for the FM-1" if recto else getattr(doc, "chapter", "")
+        head = f"{NAME}  ·  a chamber organ for the FM-1" if recto else getattr(doc, "chapter", "")
         y = H - TOP + 14
         if recto:
             canvas.drawRightString(x0 + TW, y, head)
@@ -88,7 +96,7 @@ def page_deco(canvas, doc, recto):
 
 class Doc(BaseDocTemplate):
     def __init__(self, path):
-        super().__init__(str(path), pagesize=A5, title="KIST: a chamber organ for the M-VAVE FM-1",
+        super().__init__(str(path), pagesize=A5, title=f"{NAME}: a chamber organ for the M-VAVE FM-1",
                          author="KIST", subject="The player's manual")
         recto = Frame(INNER, FOOT, TW, TH, id="r", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
         verso = Frame(OUTER, FOOT, TW, TH, id="v", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
@@ -112,6 +120,8 @@ def shot(name, caption, width=58 * mm, keep=True):
     """a screenshot, enlarged by whole pixels so it stays sharp, with a hairline round it"""
     TMP.mkdir(exist_ok=True)
     src = SHOTS / f"{name}.png"
+    if SHOTS_P and (SHOTS_P / f"{name}.png").exists():
+        src = SHOTS_P / f"{name}.png"
     big = TMP / f"{name}.png"
     Image.open(src).convert("RGB").resize((960, 960), Image.NEAREST).save(big)
     img = RLImage(str(big), width=width, height=width)
@@ -168,7 +178,7 @@ def sc(t):
 S = []
 # ---------------------------------------------------------------------------------------------------- cover ---
 S += [Spacer(1, 22 * mm),
-      Paragraph('<font color="#9e2a1f">K</font>IST', ParagraphStyle("t", fontName="Fraktur", fontSize=64, leading=70,
+      Paragraph('<font color="#9e2a1f">K</font>IST' + ("-P" if PLATE else ""), ParagraphStyle("t", fontName="Fraktur", fontSize=64, leading=70,
                                                                     alignment=TA_CENTER, textColor=INK)),
       Spacer(1, 4 * mm),
       Paragraph("a chamber organ for the M-VAVE FM-1", ParagraphStyle("st", fontName="Fell-It", fontSize=14, leading=18,
@@ -177,12 +187,18 @@ S += [Spacer(1, 22 * mm),
       Paragraph("The Player’s Manual", ParagraphStyle("st2", fontName="Fell-SC", fontSize=12, leading=16,
                                                       alignment=TA_CENTER, textColor=RED)),
       Spacer(1, 16 * mm),
-      Paragraph("Four wooden stops · forty-eight pipes speaking at once · the wind, the room and the old temperaments",
+      Paragraph("Four wooden stops · forty-eight pipes speaking at once · the wind, " + ("the plate" if PLATE else "the room")
+                + " and the old temperaments",
                 ParagraphStyle("st3", fontName="Fell", fontSize=10, leading=14, alignment=TA_CENTER, textColor=MID)),
       PageBreak()]
 
 # ------------------------------------------------------------------------------------------------ the organ ---
 S += H1("The Instrument")
+if PLATE:
+    S += [P("KIST-P is KIST with its rooms taken out and a plate put in: a large sheet of steel hung in a frame, "
+            "set ringing by a driver and heard through two pickups, as studios have used since the 1950s for an "
+            "echo that can be made to measure. Every part of it is yours to set, on three pages of its own. The "
+            "organ itself is the same as KIST’s in every way.", lead)]
 S += [P("KIST turns the FM-1 into a small wooden pipe organ of the kind that sits beside a harpsichord in a baroque "
         "ensemble: a box organ, or <i>kistorgel</i> as the Dutch call it, built in the manner of the continuo organs "
         "of the Klop workshop. It has one keyboard, four stops and nothing else, and it is meant to be played rather "
@@ -237,10 +253,10 @@ S += [P("The four stops", h2),
 
 # ----------------------------------------------------------------------------------------------- the panel ---
 S += H1("Finding your Way")
-S += [P("All of KIST is played from the FM-1’s own buttons and knobs. The words printed on the panel belong to "
-        "the FM-1’s original firmware; under KIST they do these things:", lead),
+S += [P("All of " + NAME + " is played from the FM-1’s own buttons and knobs. The words printed on the panel belong to "
+        "the FM-1’s original firmware; under " + NAME + " they do these things:", lead),
       P("The buttons", h2),
-      table([["Button", "In KIST"],
+      table([["Button", "In " + NAME],
              [sc("fx") + " / " + sc("sel"), "Gedackt 8, bass / treble"],
              [sc("env") + " / " + sc("lfo"), "Rohrflöte 4, bass / treble"],
              [sc("edit") + " / " + sc("glo"), "Principal 2, bass / treble"],
@@ -255,9 +271,10 @@ S += [P("All of KIST is played from the FM-1’s own buttons and knobs. The word
               "them back"]],
             [0.3, 0.7]),
       P("The knobs", h2),
-      table([["Knob", "In KIST"],
+      table([["Knob", "In " + NAME],
              [sc("select"), "Turn the pages of the screen"],
-             [sc("presets"), "How much of the room you hear (the room mix), from any page"],
+             [sc("presets"), ("How much of the plate you hear (the mix)" if PLATE else
+                              "How much of the room you hear (the room mix)") + ", from any page"],
              [sc("algorithm"), "Choose the temperament, from any page"],
              [sc("master"), "The volume"],
              ["The four knobs " + sc("k1–k4"), "Whatever the page shows at its foot, in the same arrangement as the "
@@ -267,7 +284,7 @@ S += [P("All of KIST is played from the FM-1’s own buttons and knobs. The word
       P("Every page is laid out the same way, like a page from an old printed book. At the top is its title in "
         "black-letter, and under it a line in italics that says what the page is about. When you turn a knob, that "
         "line briefly shows, in red, what you have just changed."),
-      P("The middle of the page is its picture: the stops, the tuning, the room, the wind. At the foot is a small "
+      P("The middle of the page is its picture: the stops, the tuning, " + ("the plate" if PLATE else "the room") + ", the wind. At the foot is a small "
         "table of four boxes, numbered i to iv. They stand for the four knobs, in the same places: i is the "
         "first knob, ii the second, and so on. Each box has the knob’s name in small red letters and, under it, "
         "what it is set to now."),
@@ -276,20 +293,63 @@ S += [P("All of KIST is played from the FM-1’s own buttons and knobs. The word
 
 # ------------------------------------------------------------------------------------------------- pages ---
 S += H1("The Pages")
-S += [P("Turn " + sc("select") + " to move through the six pages. " + sc("home") + " always brings you back to the "
-        "first.", lead),
+S += [P("Turn " + sc("select") + " to move through the " + ("eight" if PLATE else "six") + " pages. " + sc("home")
+        + " always brings you back to the first.", lead),
       P("i · The Console", h2),
       P("The organ’s front: the four stops with their bass and treble halves, and the four things you are most "
         "likely to want while playing."),
       table([["Knob", "Sets"],
+             ["i · Decay", "How long the plate rings, in seconds (see <i>The Plate</i>)"] if PLATE else
              ["i · Room", "Which room the organ stands in (see <i>The Room</i>)"],
-             ["ii · its share", "How much of the room you hear, from 0 (the pipes alone) to 100"],
+             ["ii · its share", "How much of the " + ("plate" if PLATE else "room")
+              + " you hear, from 0 (the pipes alone) to 100"],
              ["iii · Pitch", "The pitch of A (see <i>Tuning</i>)"],
              ["iv · Touch", "How the keys respond, from <i>soft</i> to <i>crisp</i> (see <i>The Wind</i>)"]],
             [0.3, 0.7]),
       P("ii · Tuning", h2),
-      P("Where the organ is tuned, and how. This page has its own chapter, <i>Tuning</i>, below."),
-      P("iii · The Room", h2),
+      P("Where the organ is tuned, and how. This page has its own chapter, <i>Tuning</i>, below.")]
+if PLATE:
+    S += [P("iii · The Plate", h2),
+          P("An organ is never heard on its own: the building is half the instrument. KIST-P gives it a plate instead: "
+            "the picture is the plate in its frame, hung on four springs, with the driver (the red ring) that sets it "
+            "moving, the two pickups that hear it, and a felt damper that closes on it as you take the treble out. "
+            "The plate grows and shrinks with its size. Under it, the curve is how the sound dies away over six "
+            "seconds."),
+          shot("plate", "The Plate. The drawing follows the size and the damping; the curve below is the decay."),
+          table([["Knob", "Sets"],
+                 ["i · Size", "How large the plate is, 30 to 130 %. A larger plate is darker and its echoes are "
+                  "further apart. The size glides rather than jumps, so turning it while the plate rings bends the "
+                  "pitch of the tail, a sound no real plate can make."],
+                 ["ii · Decay", "How long the plate rings, 0.2 to 12 seconds. It holds while the size glides."],
+                 ["iii · Damping", "Where the treble starts to die sooner than the bass, 1 to 10 kHz: low is a "
+                  "dark, felted plate, high a bright, bare one"],
+                 ["iv · Pre-delay", "A pause before the plate answers, 0 to 100 ms: a little keeps the pipes’ "
+                  "attack clear of the echo"]],
+                [0.3, 0.7]),
+          P("iv · The Drive", h2),
+          P("What goes into the plate, and how it spreads. The curve is the plate’s colour, bass on the left, "
+            "treble on the right."),
+          shot("drive", "The Drive. The curve shows the bandwidth going in and the low cut."),
+          table([["Knob", "Sets"],
+                 ["i · Bandwidth", "How much treble reaches the plate, 1 to 10 kHz"],
+                 ["ii · Input diffusion", "How quickly a note is smeared into a wash as it enters: low keeps "
+                  "some separate early echoes"],
+                 ["iii · Decay diffusion", "How dense the tail is: low, it grows grainy and you hear its echoes"],
+                 ["iv · Low cut", "Takes the deep bass out of the plate, off to 500 Hz, so the Gedackt’s low notes "
+                  "don’t boom"]],
+                [0.3, 0.7]),
+          P("v · The Motion", h2),
+          P("A real plate is never quite still, and a little movement keeps a long tail from ringing on one "
+            "note. The sine shows how fast and how far it moves."),
+          shot("motion", "The Motion: the rate and depth of the plate’s wander, its width and the mix."),
+          table([["Knob", "Sets"],
+                 ["i · Rate", "How fast the plate wanders, 0.1 to 3 times a second"],
+                 ["ii · Depth", "How far, from still (0) to 100. Deep and fast makes a chorus of it."],
+                 ["iii · Width", "From one point in the middle (0) to the full width of the two pickups (100)"],
+                 ["iv · Mix", "How much of the plate you hear, as " + sc("presets") + " sets it"]],
+                [0.3, 0.7])]
+else:
+    S += [P("iii · The Room", h2),
       P("An organ is never heard on its own: the building is half the instrument. KIST has five rooms, from a dry, "
         "close space to a large stone abbey, each with its own size and echo."),
       shot("room", "The Room. The chosen room is marked ¶ in red; the drawing on the right is how its sound dies "
@@ -302,8 +362,8 @@ S += [P("Turn " + sc("select") + " to move through the six pages. " + sc("home")
              ["iii · Distance", "How far away you sit, 1 to 20 metres: further away, the room takes over from the "
               "pipes."],
              ["iv · Decay", "How long the echo lasts, in seconds"]],
-            [0.3, 0.7]),
-      P("iv · The Wind", h2),
+            [0.3, 0.7])]
+S += [P(("vi" if PLATE else "iv") + " · The Wind", h2),
       P("The wind is what makes an organ breathe. KIST models a reservoir of air, filled by the blower and drawn on by "
         "the pipes. The page shows the reservoir as a pair of bellows and a number (100 is the pressure the pipes were "
         "voiced for), and under it a trace of the last six seconds, so you can watch the wind dip when you play a "
@@ -318,7 +378,7 @@ S += [P("Turn " + sc("select") + " to move through the six pages. " + sc("home")
              ["iii · Tremulant", "How fast the tremulant beats, in beats a second"],
              ["iv · its depth", "<i>gentle</i>, <i>moderate</i> or <i>deep</i>"]],
             [0.3, 0.7]),
-      P("v · Intonation", h2),
+      P(("vii" if PLATE else "v") + " · Intonation", h2),
       P("Intonation is what an organ builder does after the pipes are made: going through them one by one, making "
         "each sit well with its neighbours. KIST lets you do the same. Choose a stop with the first knob, then strike "
         "a key: that pipe is marked in red on the chart, and the second knob makes it louder or softer."),
@@ -331,7 +391,7 @@ S += [P("Turn " + sc("select") + " to move through the six pages. " + sc("home")
              ["iv · Drift", "How far each pipe is allowed to wander from perfect tuning, in cents (hundredths of a "
               "semitone). A little drift makes chords sound alive; none makes them sound electronic."]],
             [0.3, 0.7]),
-      P("vi · The Works", h2),
+      P(("viii" if PLATE else "vi") + " · The Works", h2),
       P("The organ’s workings: things you set once and leave."),
       shot("system", "The Works. The line under the title shows how hard the FM-1 is working, and how many pipes are "
                      "speaking."),
@@ -339,11 +399,12 @@ S += [P("Turn " + sc("select") + " to move through the six pages. " + sc("home")
              ["i · Channel", "Which MIDI channel KIST listens to, or <i>any</i>"],
              ["ii · Division", "Where the bass ends and the treble begins"],
              ["iii · Transpose", "Shift everything you play over MIDI up or down by semitones, for music written at a "
-              "different pitch"]],
+              "different pitch"]] + ([["iv · Blower", "The faint hum and rush of the organ’s blower, from silent to "
+                                       "10 (on KIST it is on the Room page)"]] if PLATE else []),
             [0.3, 0.7]),
       P("The page also says which memory chip your FM-1 has (there are two kinds, and KIST knows both), and whether "
         "the FM-1’s second processor is helping. Most FM-1s have a second processor that KIST uses for the highest "
-        "pipes and the richer rooms. On some units it is unreliable; KIST notices, stops using it and carries on "
+        "pipes and the " + ("plate" if PLATE else "room") + ". On some units it is unreliable; KIST notices, stops using it and carries on "
         "with one, and the page then says <i>retired</i>. You will not hear the difference in ordinary playing.", note)]
 
 # ------------------------------------------------------------------------------------------------ tuning ---
@@ -418,7 +479,7 @@ S += [P("On a mechanical organ the key is joined to the pipe valve by a long woo
         "press it again to bring them all back."),
       P("Saving", h2),
       P("When you have the organ as you like it, press " + sc("save") + ". The next time the FM-1 is switched on, it "
-        "will come back exactly so: the stops, the room, the tuning, the wind and your voicing. Saving takes a moment "
+        "will come back exactly so: the stops, the " + ("plate" if PLATE else "room") + ", the tuning, the wind and your voicing. Saving takes a moment "
         "during which the organ falls silent, so save between pieces rather than during one. While something has "
         "changed and not been saved, the " + sc("save") + " button is lit."),
       P("Playing from another keyboard", h2),
@@ -434,7 +495,7 @@ S += [P("KIST replaces the FM-1’s own firmware, and can always be replaced by 
       B("<b>Before the first install</b>, use FM-1 Manager’s <i>Whole flash</i> tab to keep a complete copy of "
         "the FM-1 as it came from the factory (Mac and Linux)."),
       B("Connect the FM-1 to the computer with a USB cable, switched on as usual."),
-      B("In the <i>Firmware</i> tab, choose KIST and press <i>Install on FM-1</i>. It takes a few minutes; do not "
+      B("In the <i>Firmware</i> tab, choose " + NAME + " and press <i>Install on FM-1</i>. It takes a few minutes; do not "
         "unplug it until it says it has finished."),
       B("To go back, choose M-VAVE’s own firmware the same way (the Manager can fetch it for you)."),
       P("If anything goes wrong during an install, install again: the FM-1 keeps its old firmware until the new one "
@@ -451,12 +512,15 @@ S += [P("KIST replaces the FM-1’s own firmware, and can always be replaced by 
 S += [PageBreak()]
 S += H1("At a Glance")
 S += [table([["Page", "i", "ii", "iii", "iv"],
-             ["Console", "Room", "its share", "Pitch", "Touch"],
+             ["Console", "Decay" if PLATE else "Room", "its share", "Pitch", "Touch"],
              ["Tuning", "A (Hz)", "fine", "Temperament", "upon / Division"],
-             ["The Room", "Room", "Blower", "Distance", "Decay"],
+             *([["The Plate", "Size", "Decay", "Damping", "Pre-delay"],
+                ["The Drive", "Bandwidth", "In. diffusion", "Dec. diffusion", "Low cut"],
+                ["The Motion", "Rate", "Depth", "Width", "Mix"]] if PLATE else
+               [["The Room", "Room", "Blower", "Distance", "Decay"]]),
              ["The Wind", "Wind", "Steadiness", "Tremulant", "its depth"],
              ["Intonation", "Register", "the note", "Chiff", "Drift"],
-             ["The Works", "Channel", "Division", "Transpose", ""]],
+             ["The Works", "Channel", "Division", "Transpose", "Blower" if PLATE else ""]],
             [0.24, 0.17, 0.19, 0.22, 0.18]),
       table([["Control", "Does"],
              [sc("fx sel env lfo edit glo arp"), "The stops, bass and treble"],
@@ -466,7 +530,7 @@ S += [table([["Page", "i", "ii", "iii", "iv"],
              [sc("save"), "Keep this setup"],
              [sc("home"), "The Console"],
              [sc("select"), "Turn the pages"],
-             [sc("presets"), "Room mix"],
+             [sc("presets"), "Plate mix" if PLATE else "Room mix"],
              [sc("algorithm"), "Temperament"],
              [sc("master"), "Volume"]],
             [0.45, 0.55])]

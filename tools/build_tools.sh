@@ -8,4 +8,6 @@ mkdir -p build
 SRC="dsp/organ.c dsp/tuning.c dsp/reverb.c tools/host_stub.c"
 $CC $FL -o build/calibrate tools/calibrate.c $SRC -lm
 $CC $FL -o build/engine_test tests/engine_test.c $SRC -lm
-echo "tools: build/calibrate build/engine_test"
+# KIST-P: the same organ, the plate in the room's place (dsp/plate.c gives reverb.h's interface)
+$CC $FL -DKIST_PLATE=1 -o build/engine_test_p tests/engine_test.c dsp/organ.c dsp/tuning.c dsp/plate.c tools/host_stub.c -lm
+echo "tools: build/calibrate build/engine_test build/engine_test_p"
