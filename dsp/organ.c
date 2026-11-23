@@ -43,20 +43,29 @@ typedef struct {
                                             * (+1 stopped: mostly odd harmonics; negative open: the full series) */
     float flow;                            /* wind it takes, relative */
     uint8_t prio;                          /* 3 kept longest .. 0 dropped first */
+    float drive;                           /* the jet's drive, x FLUE_BREATH: higher, more of the upper partials */
+    float even;                            /* open pipes: the bore heard half a period back, mixed in: + lifts the
+                                            * even harmonics (the octave), the Principal's brightness */
+    float surge;                           /* the wind's overshoot as the pallet opens (decays in ~18 ms): the open
+                                            * pipes speak quickly, octave first; the stopped ones, driven harder,
+                                            * stumble if it is much more than 0.1 */
 } stop_model_t;
 
 static const stop_model_t STOP[NSTOPS] = {
-    /* Gedackt 8': stopped wood, mild, almost no even harmonics */
-    {-1.0f, 0.45f, 4.0f, 3.0f, 0.985f, 6.0f, 1200.0f, 0.0506f, 0.012f, 0.06f, 28.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.00f, 3},
-    /* Rohrflöte 4': stopped with a chimney, a little brighter, a lifted fifth harmonic */
-    {-1.0f, 0.40f, 5.0f, 3.0f, 0.985f, 9.0f, 1500.0f, 0.0396f, 0.014f, 0.07f, 20.0f, 5.0f, 6.0f, 1.20f, 1.0f, 0.60f, 2},
-    /* Principal 2': open wood */
-    {+1.0f, 0.36f, 6.0f, 3.0f, 0.985f, 10.0f, 2000.0f, 0.136f, 0.018f, 0.05f, 15.0f, 0.0f, 0.0f, 0.0f, -0.6f, 0.45f, 1},
-    /* Quint 2 2/3': open wood, softer */
-    {+1.0f, 0.38f, 6.0f, 3.0f, 0.985f, 8.0f, 2000.0f, 0.0876f, 0.018f, 0.04f, 12.0f, 0.0f, 0.0f, 0.0f, -0.6f, 0.30f, 0},
+    /* Gedackt 8': stopped wood, round and hollow: a strong twelfth and seventeenth, almost no even harmonics */
+    {-1.0f, 0.45f, 4.0f, 2.0f, 0.985f, 6.0f, 1200.0f, 0.0536f, 0.012f, 0.06f, 28.0f, 0.0f, 0.0f, 0.0f, 0.6f, 1.00f, 3,
+     1.30f, 0.0f, 0.12f},
+    /* Rohrflöte 4': stopped with a chimney: brighter, the 5th..7th harmonics lifted */
+    {-1.0f, 0.40f, 4.0f, 3.0f, 0.985f, 10.0f, 1500.0f, 0.0522f, 0.014f, 0.08f, 18.0f, 5.5f, 5.0f, 1.60f, 0.0f, 0.60f, 2,
+     1.30f, 0.0f, 0.12f},
+    /* Principal 2': open wood, narrow: the octave strong and a long train of upper harmonics; quick, octave first */
+    {+1.0f, 0.40f, 6.0f, 3.0f, 0.985f, 24.0f, 3000.0f, 0.124f, 0.016f, 0.05f, 10.0f, 0.0f, 0.0f, 0.0f, -0.6f, 0.45f, 1,
+     1.00f, 0.80f, 0.60f},
+    /* Quint 2 2/3': open wood, wide (a flute): round, few upper harmonics, more breath */
+    {+1.0f, 0.40f, 6.0f, 3.0f, 0.985f, 6.0f, 1500.0f, 0.0603f, 0.024f, 0.04f, 14.0f, 0.0f, 0.0f, 0.0f, 0.3f, 0.30f, 0,
+     1.00f, 0.30f, 0.35f},
 };
 #define FLUE_BREATH 0.9f                   /* jet drive at the voiced pressure */
-#define SURGE 0.22f                        /* the foot pressure's overshoot as a pallet opens, decaying in ~18 ms */
 #define JET_REFL 0.5f
 #define END_REFL 0.5f
 
@@ -98,7 +107,7 @@ typedef struct {
     float *bore, *jet;
     uint32_t mask, wb, wj;
     float bore_d, jet_d, bore_t, jet_t, bore_0, jet_0;
-    float sign, loop_g, a_bore, a_jet, a_dc, a_out, a_hp, tap;
+    float sign, loop_g, a_bore, a_jet, a_dc, a_out, a_hp, tap, even, drive;
     float lpb, lpj, dc_in, dc_out, out_lp, hp_x, hp_y;
     float c_b0, c_a1, c_a2, c_z1, c_z2, c_mix;
     float breath, noise, chiff_now, chiff_dec, noise_base;
@@ -221,6 +230,8 @@ static int pipe_shape(pipe_t *p, int stop, float hz, float fs, int use_cal, uint
     p->jet_0 = p->jet_t;
     p->sign = m->sign;
     p->tap = m->tap;
+    p->even = m->even;
+    p->drive = m->drive;
     p->loop_g = m->loop_g;
     p->a_bore = one_pole(m->bore_fc * fe, fs);
     p->a_jet = one_pole(m->jet_fc * fe, fs);
@@ -424,7 +435,7 @@ static void pipe_start(int n, int stop)
         p->chiff_dec = fm_expf(-(float)CR / (tau * 0.001f * fs));
     }
     p->open_step = nt->open_step * (os ? 0.5f : 1.0f);
-    p->surge = SURGE;
+    p->surge = STOP[stop].surge;
     p->surge_dec = fm_expf(-(float)CR / (0.018f * fs));
     p->gain_t = reg_gain(stop, key);
     p->gain = p->gain_t;
@@ -772,7 +783,7 @@ static void wind_block(uint32_t n)
 
 /* CR samples of a pipe, its state in locals (the delay lines' writes cannot alias it) and no branch per sample but
  * the jet's clamp. CHIM: the chimney's resonator (the Rohrflöte) */
-#define PIPE_RUN(NAME, CHIM)                                                                                          \
+#define PIPE_RUN(NAME, CHIM, EVEN)                                                                                        \
 static void NAME(pipe_t *p, float *__restrict bus, uint32_t cr, float breath, float bnoise, const frac_t *qb,      \
                  const frac_t *qj, float g)                                                                          \
 {                                                                                                                    \
@@ -781,11 +792,12 @@ static void NAME(pipe_t *p, float *__restrict bus, uint32_t cr, float breath, fl
     const float sg = p->sign * p->loop_g;  /* the reflection folded into the bore's taps */                           \
     const float b0 = sg * qb->c0, b1 = sg * qb->c1, b2 = sg * qb->c2, b3 = sg * qb->c3, jfr = qj->c0;                 \
     const float a_bore = p->a_bore, a_jet = p->a_jet, k_dc = 1.0f - p->a_dc, a_out = p->a_out, tap = p->tap;         \
-    const float cb0 = p->c_b0, ca1 = p->c_a1, ca2 = p->c_a2, cmix = p->c_mix;                                         \
+    const float cb0 = p->c_b0, ca1 = p->c_a1, ca2 = p->c_a2, cmix = p->c_mix, ev = sg * p->even;                    \
+    const uint32_t ih = (ib + 1u) >> 1;    /* half the bore: the read that lifts the even harmonics */             \
     float u = p->lpb, lpj = p->lpj, dc_in = p->dc_in, dc_out = p->dc_out, out_lp = p->out_lp;                         \
     float z1 = p->c_z1, z2 = p->c_z2;                                                                                \
     uint32_t w = p->wb, rng = p->rng, j;   /* the bore and the jet are written at the same index each sample */       \
-    (void)cb0; (void)ca1; (void)ca2; (void)cmix; (void)z1; (void)z2;                                                 \
+    (void)cb0; (void)ca1; (void)ca2; (void)cmix; (void)z1; (void)z2; (void)ev; (void)ih;                             \
     for (j = 0; j < cr; j++) {                                                                                       \
         uint32_t rb = w - ib, rj = w - ij;                                                                           \
         float t, pd, pj, jt, in, y;                                                                                  \
@@ -806,6 +818,8 @@ static void NAME(pipe_t *p, float *__restrict bus, uint32_t cr, float breath, fl
         in = jt + END_REFL * t;                                                                                      \
         d[w] = in + 1e-20f;                                                                                          \
         y = in + tap * t;                                                                                            \
+        if (EVEN)                                                                                                    \
+            y += ev * d[(w - ih) & mask];                                                                            \
         out_lp += a_out * (y - out_lp);                                                                              \
         y = out_lp;                                                                                                  \
         if (CHIM) {                                                                                                  \
@@ -819,8 +833,14 @@ static void NAME(pipe_t *p, float *__restrict bus, uint32_t cr, float breath, fl
     p->lpb = u; p->lpj = lpj; p->dc_in = dc_in; p->dc_out = dc_out; p->out_lp = out_lp;                              \
     p->c_z1 = z1; p->c_z2 = z2; p->wb = w; p->rng = rng;                                                             \
 }
-PIPE_RUN(pipe_run_plain, 0)
-PIPE_RUN(pipe_run_chimney, 1)
+PIPE_RUN(pipe_run_plain, 0, 0)
+PIPE_RUN(pipe_run_chimney, 1, 0)
+PIPE_RUN(pipe_run_open, 0, 1)
+typedef void (*pipe_run_fn)(pipe_t *, float *__restrict, uint32_t, float, float, const frac_t *, const frac_t *, float);
+static pipe_run_fn pipe_runner(const pipe_t *p)
+{
+    return p->c_mix > 0.0f ? pipe_run_chimney : p->even != 0.0f ? pipe_run_open : pipe_run_plain;
+}
 
 /* the render's pipe budget: a pipe is started only while fewer than this sound (it follows the measured cost) */
 static int pipe_cap = KIST_MAX_PIPES;
@@ -868,7 +888,7 @@ static void pipe_block(int i, float *l, float *r, uint32_t n)
                 p->valve = 1.0f;
         }
         pf = wind.p_sub[k] * p->valve;
-        bt = FLUE_BREATH * pf * (1.0f + p->surge * p->valve);
+        bt = FLUE_BREATH * p->drive * pf * (1.0f + p->surge * p->valve);   /* the pallet's overshoot */
         p->surge *= p->surge_dec;
         jt = pf > 0.30f ? p->jet_0 / fm_sqrtf(pf) : p->jet_0 * JET_STRETCH;
         if (jt > p->jet_0 * JET_STRETCH)
@@ -880,7 +900,7 @@ static void pipe_block(int i, float *l, float *r, uint32_t n)
         frac_set(&qb, p->bore_d);
         qj.i = (uint32_t)(int32_t)jt;
         qj.c0 = jt - (float)(int32_t)jt;
-        (p->c_mix > 0.0f ? pipe_run_chimney : pipe_run_plain)(p, (p->side ? r : l) + s, cr, bt,
+        pipe_runner(p)(p, (p->side ? r : l) + s, cr, bt,
                                                                 bt * p->noise * (1.0f / 2147483648.0f), &qb, &qj, p->gain);
         a = fm_fabsf(p->out_lp) * p->gain;
         if (a > peak)
@@ -1169,9 +1189,9 @@ float organ_probe_run(int stop, float hz, float fs_mul, int use_cal, float secon
     qj.c0 = p.jet_t - (float)(int32_t)p.jet_t;
     a = one_pole(1.3f * hz, fs);
     for (s = 0; s < total; s += CR) {
-        float v = s < (uint32_t)(0.01f * fs) ? (float)s / (0.01f * fs) : 1.0f, bt = FLUE_BREATH * v;
+        float v = s < (uint32_t)(0.01f * fs) ? (float)s / (0.01f * fs) : 1.0f, bt = FLUE_BREATH * p.drive * v;
         memset(bus, 0, sizeof bus);
-        (p.c_mix > 0.0f ? pipe_run_chimney : pipe_run_plain)(&p, bus, CR, bt, bt * STOP[stop].noise * (1.0f / 2147483648.0f),
+        pipe_runner(&p)(&p, bus, CR, bt, bt * STOP[stop].noise * (1.0f / 2147483648.0f),
                                                               &qb, &qj, STOP[stop].gain);
         for (j = 0; j < CR; j++) {
             float y = bus[j], h = y - hx + ahp * hy;
